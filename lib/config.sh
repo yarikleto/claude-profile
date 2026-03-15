@@ -1,6 +1,6 @@
 # config.sh — Constants and managed items configuration
 
-VERSION="0.3.1"
+VERSION="0.3.2"
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 PROFILES_DIR="$CLAUDE_DIR/__profiles__"
 CURRENT_FILE="$PROFILES_DIR/.current"
@@ -36,25 +36,39 @@ SEED_CONTENTS=(
   '{}'
 )
 
+# Match actual parent-directory traversal segments, not ordinary ".." in filenames.
+_has_parent_traversal() {
+  [[ "$1" =~ (^|/)\.\.(/|$) ]]
+}
+
 # Validate a managed item path is safe (no traversal, under $HOME for custom paths).
 _validate_managed_item() {
   local item="$1"
-  local path
+  local name path
   if [[ "$item" == *:* ]]; then
+    name="${item%%:*}"
     path="${item#*:}"
   else
+    name="$item"
     path="$CLAUDE_DIR/$item"
   fi
-  # Reject path traversal components
-  if [[ "$path" == *..* ]]; then
+
+  if [[ -z "$name" || "$name" == "." || "$name" == ".." || "$name" == */* || "$name" =~ [[:cntrl:]] ]]; then
+    err "Invalid managed item '$item': storage name must be a single file or directory name"
+    exit 1
+  fi
+
+  if _has_parent_traversal "$path"; then
     err "Invalid managed item '$item': path contains '..'"
     exit 1
   fi
-  # Resolve and verify custom paths are under $HOME
+
   if [[ "$item" == *:* ]]; then
-    local resolved
-    resolved="$(cd "$(dirname "$path")" 2>/dev/null && pwd)/$(basename "$path")" 2>/dev/null || resolved="$path"
-    if [[ "$resolved" != "$HOME"/* ]]; then
+    if [[ "$path" != /* ]]; then
+      err "Invalid managed item '$item': path must be absolute"
+      exit 1
+    fi
+    if [[ "$path" != "$HOME" && "$path" != "$HOME"/* ]]; then
       err "Invalid managed item '$item': path must be under \$HOME"
       exit 1
     fi

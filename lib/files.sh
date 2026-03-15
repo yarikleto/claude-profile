@@ -27,6 +27,11 @@ _seed_profile() {
   fi
 }
 
+_ensure_target_parent() {
+  local target="$1"
+  mkdir -p "$(dirname "$target")"
+}
+
 # Copy live ~/.claude/ state into a profile directory.
 # Follows symlinks at the source (user's live files are trusted) so that
 # symlinked settings are captured as regular files in the profile.
@@ -88,6 +93,21 @@ _save_current_to() {
 _load_profile_to_live() {
   local profile_dir="$1"
   local move_bulk="${2:-}"
+  # Pre-validate: ensure all source items are readable before destructive ops
+  for item in "${MANAGED_ITEMS[@]}" "${BULK_ITEMS[@]}"; do
+    local iname
+    iname="$(_item_name "$item")"
+    if [[ -e "$profile_dir/$iname" && ! -L "$profile_dir/$iname" ]]; then
+      if [[ -d "$profile_dir/$iname" ]]; then
+        local find_errors
+        find_errors="$(find "$profile_dir/$iname" -type d 2>&1 >/dev/null)" || true
+        if [[ -n "$find_errors" ]]; then
+          err "Cannot read files in $profile_dir/$iname — aborting switch (live files untouched)"
+          return 1
+        fi
+      fi
+    fi
+  done
   for item in "${MANAGED_ITEMS[@]}"; do
     local target iname
     target="$(_item_source "$item")"
@@ -96,6 +116,7 @@ _load_profile_to_live() {
       rm -rf "$target"
     fi
     if [[ -e "$profile_dir/$iname" && ! -L "$profile_dir/$iname" ]]; then
+      _ensure_target_parent "$target"
       cp -RP "$profile_dir/$iname" "$target"
     fi
   done
@@ -135,6 +156,10 @@ _load_bulk_from_profile() {
 # Restore from the original backup into live locations.
 _restore_from_backup() {
   local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
+  if [[ ! -d "$backup_dir" ]]; then
+    err "Original backup not found — refusing to restore (would destroy live files)"
+    return 1
+  fi
   for item in "${MANAGED_ITEMS[@]}"; do
     local target iname
     target="$(_item_source "$item")"
@@ -143,6 +168,7 @@ _restore_from_backup() {
       rm -rf "$target"
     fi
     if [[ -e "$backup_dir/$iname" && ! -L "$backup_dir/$iname" ]]; then
+      _ensure_target_parent "$target"
       cp -RP "$backup_dir/$iname" "$target"
     fi
   done

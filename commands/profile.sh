@@ -112,6 +112,7 @@ cmd_save() {
 
   name="${name:-$(get_current)}"
   _require_profile_name "$name" "claude-profile save [name] [-m message]"
+  _ensure_original_backup
 
   local profile_dir="$PROFILES_DIR/$name"
   mkdir -p "$profile_dir"
@@ -131,16 +132,16 @@ cmd_deactivate() {
     warn "No profile is active"; return
   fi
 
-  info "Saving $(_pname "$current")..."
-  _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move-bulk
-
   if [[ "$keep" == true ]]; then
-    # Keep current files in place — just detach from profiles
-    _load_bulk_from_profile "$PROFILES_DIR/$current"
+    # Keep current files in place — save a copy to profile, then detach
+    info "Saving $(_pname "$current")..."
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate --keep"
     clear_current
     ok "Detached from $(_pname "$current") — current config kept as-is"
     info "You can safely remove ${BOLD}$PROFILES_DIR${NC} when ready"
   else
+    info "Saving $(_pname "$current")..."
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move-bulk
     info "Restoring original state..."
     _restore_from_backup
     clear_current

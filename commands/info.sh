@@ -49,6 +49,11 @@ cmd_edit() {
   _require_profile_name "$name" "claude-profile edit <name>"
   _require_profile_exists "$name"
 
+  # Auto-save live state so the profile dir has the latest files
+  if [[ "$(get_current)" == "$name" ]]; then
+    _save_current_to "$PROFILES_DIR/$name" "Auto-save before edit"
+  fi
+
   local profile_dir="$PROFILES_DIR/$name"
   if command -v code &>/dev/null; then
     code "$profile_dir"

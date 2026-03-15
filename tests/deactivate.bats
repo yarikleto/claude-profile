@@ -29,6 +29,17 @@ load test_helper
   [ ! -f "$CLAUDE_CODE_HOME/__profiles__/.current" ]
 }
 
+@test "deactivate: errors if backup directory is missing instead of destroying files" {
+  run_cli_ok fork default
+  run_cli_ok use default
+  rm -rf "$(backup_dir)"
+
+  run_cli deactivate
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"backup"* ]] || [[ "$output" == *"not found"* ]]
+  [ -f "$CLAUDE_CODE_HOME/settings.json" ]
+}
+
 @test "no-op when no profile active" {
   run_cli deactivate
   [ "$status" -eq 0 ]
@@ -58,6 +69,22 @@ load test_helper
   ! grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
   # Profile marker should be cleared
   [ ! -f "$CLAUDE_CODE_HOME/__profiles__/.current" ]
+}
+
+@test "--keep: bulk items in both live AND profile after detach" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/myproject"
+  echo "important data" > "$CLAUDE_CODE_HOME/projects/myproject/file.txt"
+  mkdir -p "$CLAUDE_CODE_HOME/todos"
+  echo '{"task": 1}' > "$CLAUDE_CODE_HOME/todos/task1.json"
+
+  run_cli_ok fork default
+  run_cli_ok use default
+  run_cli_ok deactivate --keep
+
+  [ -f "$CLAUDE_CODE_HOME/projects/myproject/file.txt" ]
+  [ -f "$CLAUDE_CODE_HOME/todos/task1.json" ]
+  [ -f "$(profile_dir default)/projects/myproject/file.txt" ]
+  [ -f "$(profile_dir default)/todos/task1.json" ]
 }
 
 @test "--keep: bulk items are restored to live" {

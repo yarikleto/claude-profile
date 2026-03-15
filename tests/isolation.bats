@@ -28,8 +28,8 @@ load test_helper
   run_cli_ok use default
 
   local backup="$(backup_dir)"
-  local original_md5
-  original_md5="$(cat "$backup/settings.json" | md5sum)"
+  local original_settings
+  original_settings="$(cat "$backup/settings.json")"
 
   # Make multiple changes and saves
   echo '{"v1": true}' > "$CLAUDE_CODE_HOME/settings.json"
@@ -38,9 +38,9 @@ load test_helper
   run_cli_ok save -m "v2"
 
   # Backup must be unchanged
-  local current_md5
-  current_md5="$(cat "$backup/settings.json" | md5sum)"
-  [ "$original_md5" = "$current_md5" ]
+  local current_settings
+  current_settings="$(cat "$backup/settings.json")"
+  [ "$original_settings" = "$current_settings" ]
 }
 
 @test "isolation: new profile has only minimal seeded config" {

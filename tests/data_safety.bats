@@ -374,6 +374,35 @@ JSON
 
 # ─── Symlink in profile dir is safely ignored on load ─────
 
+@test "use: switching to profile with unreadable dir does not destroy live state" {
+  run_cli_ok fork source
+  run_cli_ok fork target
+  run_cli_ok use source
+  echo '{"important": "data"}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  # Now make target profile's skills dir unreadable
+  mkdir -p "$(profile_dir target)/skills/locked-skill"
+  echo "data" > "$(profile_dir target)/skills/locked-skill/SKILL.md"
+  chmod 000 "$(profile_dir target)/skills/locked-skill"
+
+  run_cli use target
+  # Live settings should still have source's content (switch should be aborted)
+  grep -q '"important"' "$CLAUDE_CODE_HOME/settings.json"
+  # Skills from test setup should still be present
+  [ -d "$CLAUDE_CODE_HOME/skills" ]
+
+  chmod 755 "$(profile_dir target)/skills/locked-skill" 2>/dev/null || true
+}
+
+@test "edit: auto-saves active profile before opening" {
+  run_cli_ok fork default
+  run_cli_ok use default
+  echo '{"unsaved_edit": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  EDITOR=true run_cli_ok edit default
+  grep -q '"unsaved_edit"' "$(profile_dir default)/settings.json"
+}
+
 @test "use: symlink planted in profile dir does not overwrite live files" {
   run_cli_ok fork legit
 

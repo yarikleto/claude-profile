@@ -25,6 +25,19 @@ load test_helper
   [[ "$log" == *"Explicit save"* ]]
 }
 
+@test "save as first command creates backup so deactivate works" {
+  run_cli_ok save myprofile -m "First save"
+  [ -d "$(backup_dir)" ]
+  [ -f "$(backup_dir)/settings.json" ]
+
+  run_cli_ok use myprofile
+  echo '{"modified": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok deactivate
+
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+  ! grep -q '"modified"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
 @test "no-op when nothing changed" {
   run_cli_ok fork default
   run_cli_ok use default

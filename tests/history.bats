@@ -27,5 +27,6 @@ load test_helper
   run_cli_ok fork default
   rm -rf "$(profile_dir default)/.git"
   run_cli history default
+  [ "$status" -eq 0 ]
   [[ "$output" == *"No history"* ]]
 }

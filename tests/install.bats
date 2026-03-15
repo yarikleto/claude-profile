@@ -63,6 +63,7 @@ setup() {
   run bash "$cp" use default
   [ "$status" -eq 0 ]
   run bash "$cp" list
+  [ "$status" -eq 0 ]
   [[ "$output" == *"default"* ]]
 }
 

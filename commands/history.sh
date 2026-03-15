@@ -39,34 +39,46 @@ cmd_diff() {
   fi
 }
 
+_snapshot_live_for_diff() {
+  local dst="$1"
+  for item in "${MANAGED_ITEMS[@]}"; do
+    local src iname
+    src="$(_item_source "$item")"
+    iname="$(_item_name "$item")"
+    if [[ -e "$src" ]]; then
+      cp -RH "$src" "$dst/$iname" || return 1
+    fi
+  done
+}
+
 _diff_unsaved() {
   local name="$1" profile_dir="$2"
   echo -e "${CYAN}${BOLD}Unsaved changes: $name${NC}"
   echo ""
 
   local tmp
-  tmp="$(mktemp -d)"
-  trap '[[ -n "${tmp:-}" ]] && rm -rf "$tmp"' RETURN
+  tmp="$(mktemp -d)" || return 1
+  if ! _snapshot_live_for_diff "$tmp"; then
+    rm -rf "$tmp"
+    return 1
+  fi
 
-  for item in "${MANAGED_ITEMS[@]}"; do
-    local src iname
-    src="$(_item_source "$item")"
-    iname="$(_item_name "$item")"
-    if [[ -e "$src" ]]; then
-      cp -RH "$src" "$tmp/$iname"
-    fi
-  done
-
-  local excludes="--exclude=.git --exclude=.gitignore"
+  local diff_args
+  diff_args=(-rq "$profile_dir" "$tmp" --exclude=.git --exclude=.gitignore)
   for item in "${BULK_ITEMS[@]}"; do
-    local iname
-    iname="$(_item_name "$item")"
-    excludes+=" --exclude=$iname"
+    diff_args+=("--exclude=$(_item_name "$item")")
   done
 
-  local changes
-  changes="$(eval diff -rq \"\$profile_dir\" \"\$tmp\" $excludes 2>/dev/null \
-    | sed "s|$profile_dir|profile|g; s|$tmp|current|g")" || true
+  local changes diff_status=0
+  if ! changes="$(diff "${diff_args[@]}" 2>/dev/null \
+    | sed "s|$profile_dir|profile|g; s|$tmp|current|g")"; then
+    diff_status=$?
+    if [[ $diff_status -gt 1 ]]; then
+      rm -rf "$tmp"
+      return "$diff_status"
+    fi
+  fi
+  rm -rf "$tmp"
 
   if [[ -n "$changes" ]]; then
     echo "$changes"
@@ -114,13 +126,16 @@ cmd_restore() {
   short="$(git -C "$profile_dir" log --format='%h %s' -1 "$resolved" --)"
   info "Restoring $(_pname "$name") to: ${YELLOW}$short${NC}"
 
-  # Restore files from git (not .git itself)
-  for item in "${MANAGED_ITEMS[@]}"; do
-    local iname
-    iname="$(_item_name "$item")"
-    rm -rf "$profile_dir/$iname"
-  done
-  git -C "$profile_dir" checkout "$resolved" -- . 2>/dev/null
+  # Auto-save unsaved live changes if this is the active profile
+  if [[ "$(get_current)" == "$name" ]]; then
+    _save_current_to "$profile_dir" "Auto-save before restore to $ref"
+  fi
+
+  # Restore files from git — checkout overwrites in-place (no pre-delete needed)
+  if ! git -C "$profile_dir" checkout "$resolved" -- . 2>/dev/null; then
+    err "Failed to checkout $ref — profile unchanged"
+    exit 1
+  fi
   _git_commit "$profile_dir" "Restored to $ref"
 
   # If active, reload into live locations
@@ -130,4 +145,5 @@ cmd_restore() {
   fi
 
   ok "Restored $(_pname "$name") to ${YELLOW}$ref${NC}"
+  info "Note: bulk items (projects/, todos/, etc.) are not affected by restore"
 }

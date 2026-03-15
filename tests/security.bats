@@ -140,21 +140,49 @@ load test_helper
   run_cli_ok fork managed-ok
 }
 
+@test ".managed storage name cannot escape the profile directory" {
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
+  echo "../escape:$HOME/.claude.json" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
+
+  run_cli fork managed-name-escape
+  [ ! -e "$CLAUDE_CODE_HOME/__profiles__/escape" ]
+}
+
+@test "valid custom .managed entry still works when target parent directory is absent" {
+  local custom_dir="$HOME/custom-config"
+  local custom_file="$custom_dir/settings.override.json"
+
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__" "$custom_dir"
+  echo '{"custom":true}' > "$custom_file"
+  echo "custom:$custom_file" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
+
+  run_cli_ok fork managed-custom
+  run_cli_ok new other
+
+  rm -rf "$custom_dir"
+
+  run_cli_ok use managed-custom
+  [ -f "$custom_file" ]
+  grep -q '"custom":true' "$custom_file"
+}
+
 # ─── Temp file cleanup ───────────────────────────────────
 
 @test "diff: cleans up temp directory even on failure" {
   run_cli_ok fork tmptest
   run_cli_ok use tmptest
 
-  local tmp_before
-  tmp_before="$(ls -d /tmp/tmp.* 2>/dev/null | wc -l)"
+  echo "secret" > "$CLAUDE_CODE_HOME/CLAUDE.md"
+  chmod 000 "$CLAUDE_CODE_HOME/CLAUDE.md"
 
-  # Run diff (should work fine)
-  run_cli_ok diff tmptest
+  local tmp_before
+  tmp_before="$(find "$BATS_TEST_TMPDIR" -mindepth 1 -maxdepth 1 -type d -name 'tmp.*' | wc -l | tr -d ' ')"
+
+  run env TMPDIR="$BATS_TEST_TMPDIR" bash "$CLAUDE_PROFILE" diff tmptest
+  [ "$status" -ne 0 ]
 
   local tmp_after
-  tmp_after="$(ls -d /tmp/tmp.* 2>/dev/null | wc -l)"
+  tmp_after="$(find "$BATS_TEST_TMPDIR" -mindepth 1 -maxdepth 1 -type d -name 'tmp.*' | wc -l | tr -d ' ')"
 
-  # Should not leak temp directories (allow for same or fewer)
-  [ "$tmp_after" -le "$((tmp_before + 0))" ] || true
+  [ "$tmp_after" -eq "$tmp_before" ]
 }
