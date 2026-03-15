@@ -22,10 +22,10 @@ load test_helper
 
 @test "auto-saves current profile before switching" {
   run_cli_ok fork default
-  run_cli_ok use default
+  # fork auto-activates default
   echo '{"changed_while_active": true}' > "$CLAUDE_CODE_HOME/settings.json"
   run_cli_ok new other
-  run_cli_ok use other
+  # new auto-saves default before activating other
 
   local dir="$(profile_dir default)"
   grep -q '"changed_while_active"' "$dir/settings.json"

@@ -10,12 +10,20 @@ cmd_new() {
     err "Profile '$name' already exists"; exit 1
   fi
 
+  # Auto-save current profile before switching
+  local current
+  current="$(get_current)"
+  if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    info "Saving profile '$current'..."
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'"
+  fi
+
   mkdir -p "$profile_dir"
   _git_init "$profile_dir"
 
-  ok "Profile '$name' created (clean)"
-  _show_summary "$profile_dir"
-  echo -e "  ${DIM}Activate with: claude-profile use $name${NC}"
+  _load_profile_to_live "$profile_dir"
+  set_current "$name"
+  ok "Profile '$name' created and activated (clean)"
 }
 
 cmd_fork() {
@@ -32,6 +40,13 @@ cmd_fork() {
 
   local current
   current="$(get_current)"
+
+  # Auto-save current profile before switching
+  if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    info "Saving profile '$current'..."
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before fork '$name'"
+  fi
+
   if [[ -n "$current" ]]; then
     info "Forking from active profile '$current'..."
   else
@@ -40,9 +55,9 @@ cmd_fork() {
   _snapshot_current "$profile_dir"
   _git_init "$profile_dir"
 
-  ok "Profile '$name' created"
+  set_current "$name"
+  ok "Profile '$name' created and activated"
   _show_summary "$profile_dir"
-  echo -e "  ${DIM}Activate with: claude-profile use $name${NC}"
 }
 
 cmd_use() {

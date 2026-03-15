@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 load test_helper
 
-@test "creates empty profile" {
+@test "creates empty profile and activates it" {
   run_cli_ok new clean
 
   local dir="$(profile_dir clean)"
@@ -9,6 +9,7 @@ load test_helper
   [ -d "$dir/.git" ]
   [ ! -f "$dir/settings.json" ]
   [ ! -d "$dir/skills" ]
+  [[ "$(cat "$PROFILES_DIR/.current")" == "clean" ]]
 }
 
 @test "rejects duplicate name" {

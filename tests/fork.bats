@@ -40,7 +40,7 @@ load test_helper
 
 @test "from active profile copies active state" {
   run_cli_ok fork default
-  run_cli_ok use default
+  # fork auto-activates, so default is already active
   echo '{"active_change": true}' > "$CLAUDE_CODE_HOME/settings.json"
   run_cli_ok fork forked
 
