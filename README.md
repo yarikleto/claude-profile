@@ -72,7 +72,7 @@ That's it. Your original config is automatically backed up and can be restored a
 
 ## What gets switched
 
-Each profile is an independent copy of your Claude Code configuration:
+Each profile fully isolates your Claude Code environment — not just settings, but also **memory, conversations, plugins, and history**. Switching profiles means a completely different Claude "brain".
 
 | Config files | Data directories (moved instantly) |
 |---|---|
