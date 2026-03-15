@@ -8,7 +8,7 @@ load test_helper
 
   # New profile has minimal seeded config
   [ -f "$CLAUDE_CODE_HOME/settings.json" ]
-  [[ "$(cat "$CLAUDE_CODE_HOME/settings.json")" == "{}" ]]
+  grep -q '"statusLine"' "$CLAUDE_CODE_HOME/settings.json"
   [ -f "$HOME/.claude.json" ]
   [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
 }

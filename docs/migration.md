@@ -60,7 +60,7 @@ git -C ~/.claude/__profiles__/work log --oneline
 If you ran `claude-profile statusline install`, also remove:
 
 ```bash
-rm -f ~/.claude/statusline-profile.sh
+rm -f ~/.claude/__profiles__/statusline.sh
 ```
 
 And remove the `"statusLine"` entry from `~/.claude/settings.json`, or set up a new one using Claude Code's `/statusline` command.

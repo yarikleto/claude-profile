@@ -9,7 +9,7 @@ load test_helper
   [ -d "$dir/.git" ]
   # Seeded with minimal config so Claude Code doesn't complain
   [ -f "$dir/settings.json" ]
-  [[ "$(cat "$dir/settings.json")" == "{}" ]]
+  grep -q '"statusLine"' "$dir/settings.json"
   [ ! -d "$dir/skills" ]
   [[ "$(cat "$CLAUDE_CODE_HOME/__profiles__/.current")" == "clean" ]]
 }

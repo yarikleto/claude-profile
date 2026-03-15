@@ -73,7 +73,7 @@ Make sure you completed Step 1 first, or your `~/.claude/` files will be from wh
 **Statusline** — if you ran `claude-profile statusline install`:
 
 ```bash
-rm -f ~/.claude/statusline-profile.sh
+rm -f ~/.claude/__profiles__/statusline.sh
 # Also remove the "statusLine" entry from ~/.claude/settings.json
 ```
 

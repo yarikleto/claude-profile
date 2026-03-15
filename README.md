@@ -142,16 +142,17 @@ $ claude-profile history
 $ claude-profile restore a24a13b    # go back to that point
 ```
 
-### UI integration
+### Status line
 
-**Claude Code status line:**
+The active profile name is shown in the Claude Code status line automatically:
 
-```bash
-claude-profile statusline install
-```
 ```
 Opus 4.6 · profile: review
 ```
+
+This is set up during installation. If you already have a custom `statusLine` in your `settings.json`, it won't be overwritten — run `claude-profile statusline install` manually to configure it, or add the script path to your existing statusline.
+
+To remove: `claude-profile statusline uninstall`
 
 ## How it works
 

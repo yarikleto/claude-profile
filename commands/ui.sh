@@ -2,7 +2,7 @@
 
 cmd_statusline() {
   local action="${1:-install}"
-  local statusline_script="$CLAUDE_DIR/statusline-profile.sh"
+  local statusline_script="$PROFILES_DIR/statusline.sh"
 
   case "$action" in
     install)
@@ -30,7 +30,7 @@ SCRIPT
         else
           local tmp
           tmp="$(mktemp)"
-          if sed '$ s/}/,\n  "statusLine": { "type": "command", "command": "~\/.claude\/statusline-profile.sh" }\n}/' "$settings" > "$tmp"; then
+          if sed '$ s/}/,\n  "statusLine": { "type": "command", "command": "~\/.claude\/__profiles__\/statusline.sh" }\n}/' "$settings" > "$tmp"; then
             mv "$tmp" "$settings"
             ok "Status line configured in settings.json"
           else
@@ -40,7 +40,7 @@ SCRIPT
           fi
         fi
       else
-        echo '{ "statusLine": { "type": "command", "command": "~/.claude/statusline-profile.sh" } }' > "$settings"
+        echo '{ "statusLine": { "type": "command", "command": "~/.claude/__profiles__/statusline.sh" } }' > "$settings"
         ok "Created settings.json with status line"
       fi
 

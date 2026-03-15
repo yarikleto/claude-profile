@@ -76,9 +76,45 @@ CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 SEED_DIR="$CLAUDE_DIR/__profiles__/.seed"
 if [[ ! -d "$SEED_DIR" ]]; then
   mkdir -p "$SEED_DIR"
-  echo '{}' > "$SEED_DIR/settings.json"
+  echo '{ "statusLine": { "type": "command", "command": "~/.claude/__profiles__/statusline.sh" } }' > "$SEED_DIR/settings.json"
   echo '{}' > "$SEED_DIR/.claude.json"
   ok "Created seed templates in $SEED_DIR"
+fi
+
+# ─── Install statusline ─────────────────────────────────────
+STATUSLINE_SCRIPT="$CLAUDE_DIR/__profiles__/statusline.sh"
+SETTINGS="$CLAUDE_DIR/settings.json"
+
+# Create the statusline script
+cat > "$STATUSLINE_SCRIPT" <<'SCRIPT'
+#!/bin/bash
+input=$(cat)
+model=$(echo "$input" | grep -o '"display_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+model="${model:-Claude}"
+profile_file="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__/.current"
+if [[ -f "$profile_file" ]]; then
+  profile="$(tr -cd 'a-zA-Z0-9._-' < "$profile_file")"
+  echo "${model} · profile: ${profile}"
+else
+  echo "${model}"
+fi
+SCRIPT
+chmod +x "$STATUSLINE_SCRIPT"
+
+# Add statusLine to settings.json only if not already configured
+if [[ -f "$SETTINGS" ]]; then
+  if ! grep -q '"statusLine"' "$SETTINGS"; then
+    tmp="$(mktemp)"
+    if sed '$ s/}/,\n  "statusLine": { "type": "command", "command": "~\/.claude\/__profiles__\/statusline.sh" }\n}/' "$SETTINGS" > "$tmp"; then
+      mv "$tmp" "$SETTINGS"
+      ok "Status line added to settings.json"
+    else
+      rm -f "$tmp"
+    fi
+  fi
+elif [[ ! -f "$SETTINGS" ]]; then
+  echo '{ "statusLine": { "type": "command", "command": "~/.claude/__profiles__/statusline.sh" } }' > "$SETTINGS"
+  ok "Created settings.json with status line"
 fi
 
 # ─── Check PATH ─────────────────────────────────────────────

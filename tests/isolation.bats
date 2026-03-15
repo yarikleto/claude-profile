@@ -48,7 +48,7 @@ load test_helper
   run_cli_ok use empty
 
   # Only minimal seeded files should exist
-  [[ "$(cat "$CLAUDE_CODE_HOME/settings.json")" == "{}" ]]
+  grep -q '"statusLine"' "$CLAUDE_CODE_HOME/settings.json"
   [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
   [ ! -f "$CLAUDE_CODE_HOME/CLAUDE.md" ]
   [ ! -d "$CLAUDE_CODE_HOME/agents" ]
