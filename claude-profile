@@ -78,7 +78,8 @@ ${CYAN}${BOLD}EXAMPLES${NC}
 ${CYAN}${BOLD}WHAT GETS SWITCHED${NC}
   ${BOLD}settings.json${NC}  ${BOLD}CLAUDE.md${NC}  ${BOLD}agents/${NC}  ${BOLD}skills/${NC}  ${BOLD}rules/${NC}  ${BOLD}keybindings.json${NC}
   ${BOLD}~/.claude.json${NC} ${DIM}(MCP servers)${NC}
-  ${BOLD}projects/${NC}  ${BOLD}agent-memory/${NC}  ${BOLD}todos/${NC}  ${BOLD}plans/${NC}  ${BOLD}tasks/${NC} ${DIM}(bulk — moved, not copied)${NC}
+  ${BOLD}projects/${NC}  ${BOLD}agent-memory/${NC}  ${BOLD}todos/${NC}  ${BOLD}plans/${NC}  ${BOLD}tasks/${NC}  ${BOLD}plugins/${NC}  ${BOLD}history.jsonl${NC}
+  ${DIM}(bulk — moved, not copied)${NC}
 
 ${CYAN}${BOLD}FILES${NC}
   Profiles dir:  ${BOLD}\$CLAUDE_CODE_HOME/__profiles__${NC} ${DIM}(default: ~/.claude/__profiles__)${NC}

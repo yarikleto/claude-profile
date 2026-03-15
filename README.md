@@ -81,8 +81,8 @@ Each profile is an independent copy of your Claude Code configuration:
 | `agents/` — custom subagents | `todos/` — task lists |
 | `skills/` — slash commands | `plans/` — plans |
 | `rules/` — topic-specific rules | `tasks/` — task data |
-| `keybindings.json` — keyboard shortcuts | |
-| `~/.claude.json` — MCP servers | |
+| `keybindings.json` — keyboard shortcuts | `plugins/` — installed plugins |
+| `~/.claude.json` — MCP servers | `history.jsonl` — conversation history |
 
 Config files are copied on switch. Data directories are **moved** (instant, even for large `projects/`).
 

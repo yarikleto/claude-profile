@@ -61,7 +61,7 @@ completions/
 ### Two types of managed items
 
 1. **Tracked items** (`MANAGED_ITEMS`) — small config files (settings.json, CLAUDE.md, etc.). Copied on switch, tracked by git in each profile.
-2. **Bulk items** (`BULK_ITEMS`) — large data dirs (projects/, agent-memory/, todos/, plans/, tasks/). **Moved** (not copied) on switch for speed, **copied** on fork/save. Excluded from git via `.gitignore`.
+2. **Bulk items** (`BULK_ITEMS`) — large data dirs (projects/, agent-memory/, todos/, plans/, tasks/, plugins/, history.jsonl). **Moved** (not copied) on switch for speed, **copied** on fork/save. Excluded from git via `.gitignore`.
 
 During `use` (switch), pass `--move-bulk` to `_save_current_to` and `_load_profile_to_live`. During `save`/`fork`, don't — let them copy.
 

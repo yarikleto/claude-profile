@@ -64,7 +64,7 @@ Next time you run `new`, it will use your custom templates.
 
 ## Bulk items
 
-Large data directories (`projects/`, `agent-memory/`, `todos/`, `plans/`, `tasks/`) are handled differently from config files:
+Large data directories and files (`projects/`, `agent-memory/`, `todos/`, `plans/`, `tasks/`, `plugins/`, `history.jsonl`) are handled differently from config files:
 
 - **On switch (`use`)** — moved (instant, even for hundreds of MB)
 - **On fork/save** — copied (safe, preserves live data)
