@@ -20,7 +20,7 @@ _backup_raw_state() {
   [[ -d "$backup_dir" ]] && return
   mkdir -p "$backup_dir"
   info "Backing up original state..."
-  for item in "${MANAGED_ITEMS[@]}"; do
+  for item in "${MANAGED_ITEMS[@]}" "${BULK_ITEMS[@]}"; do
     local src iname
     src="$(_item_source "$item")"
     iname="$(_item_name "$item")"

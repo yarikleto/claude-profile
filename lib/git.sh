@@ -3,6 +3,16 @@
 _git_init() {
   local dir="$1"
   if [[ ! -d "$dir/.git" ]]; then
+    # Exclude bulk items from git tracking
+    local gitignore=""
+    for item in "${BULK_ITEMS[@]}"; do
+      local iname
+      iname="$(_item_name "$item")"
+      gitignore+="/$iname"$'\n'
+    done
+    if [[ -n "$gitignore" ]]; then
+      echo "$gitignore" > "$dir/.gitignore"
+    fi
     git -C "$dir" init -q
     git -C "$dir" add -A
     git -C "$dir" commit -q -m "Profile created" --allow-empty 2>/dev/null || true

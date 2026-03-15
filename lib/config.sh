@@ -1,6 +1,6 @@
 # config.sh — Constants and managed items configuration
 
-VERSION="0.1.2"
+VERSION="0.2.0"
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 PROFILES_DIR="$CLAUDE_DIR/profiles"
 CURRENT_FILE="$PROFILES_DIR/.current"
@@ -14,6 +14,16 @@ _DEFAULT_MANAGED_ITEMS=(
   "rules"
   "keybindings.json"
   ".claude.json:$HOME/.claude.json"
+)
+
+# Bulk items: large data dirs that are moved (not copied) during switch for speed.
+# Not tracked by git. Always use cp for fork/save, mv for switch.
+_DEFAULT_BULK_ITEMS=(
+  "projects"
+  "agent-memory"
+  "todos"
+  "plans"
+  "tasks"
 )
 
 # Validate a managed item path is safe (no traversal, under $HOME for custom paths).
@@ -79,3 +89,10 @@ _item_name() {
 }
 
 _load_managed_items
+
+# Load bulk items (currently hardcoded, no override file).
+_load_bulk_items() {
+  BULK_ITEMS=("${_DEFAULT_BULK_ITEMS[@]}")
+}
+
+_load_bulk_items

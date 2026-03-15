@@ -57,8 +57,15 @@ _diff_unsaved() {
     fi
   done
 
+  local excludes="--exclude=.git --exclude=.gitignore"
+  for item in "${BULK_ITEMS[@]}"; do
+    local iname
+    iname="$(_item_name "$item")"
+    excludes+=" --exclude=$iname"
+  done
+
   local changes
-  changes="$(diff -rq "$profile_dir" "$tmp" --exclude='.git' 2>/dev/null \
+  changes="$(eval diff -rq \"\$profile_dir\" \"\$tmp\" $excludes 2>/dev/null \
     | sed "s|$profile_dir|profile|g; s|$tmp|current|g")" || true
 
   if [[ -n "$changes" ]]; then

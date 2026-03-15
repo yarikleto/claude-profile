@@ -15,13 +15,13 @@ cmd_new() {
   current="$(get_current)"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
-    _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'"
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move-bulk
   fi
 
   mkdir -p "$profile_dir"
   _git_init "$profile_dir"
 
-  _load_profile_to_live "$profile_dir"
+  _load_profile_to_live "$profile_dir" --move-bulk
   set_current "$name"
   ok "Created and activated $(_pname "$name") ${DIM}(clean)${NC}"
 }
@@ -46,6 +46,9 @@ cmd_fork() {
     info "Saving profile $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before fork '$name'"
   fi
+  # Note: fork uses _snapshot_current (cp), not --move-bulk, because it
+  # copies the current live state into the new profile. The live state
+  # is preserved since the new profile IS the current state.
 
   if [[ -n "$current" ]]; then
     info "Forking from $(_pname "$current")..."
@@ -84,11 +87,11 @@ cmd_use() {
   # Auto-save current profile before switching
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving $(_pname "$current")..."
-    _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'"
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'" --move-bulk
   fi
 
   info "Switching to $(_pname "$name")..."
-  _load_profile_to_live "$profile_dir"
+  _load_profile_to_live "$profile_dir" --move-bulk
 
   set_current "$name"
   ok "Active profile: $(_pname "$name")"
@@ -121,7 +124,7 @@ cmd_deactivate() {
   fi
 
   info "Saving $(_pname "$current")..."
-  _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate"
+  _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move-bulk
 
   info "Restoring original state..."
   _restore_from_backup
