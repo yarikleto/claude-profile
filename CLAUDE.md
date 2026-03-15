@@ -38,7 +38,7 @@ commands/
   profile.sh                # new, fork, use, save, deactivate
   info.sh                   # list, current, show, edit, delete
   history.sh                # history, diff, restore
-  ui.sh                     # prompt-init, statusline
+  ui.sh                     # statusline
 tests/
   test_helper.bash          # Shared setup: isolated $HOME, run_cli helpers
   <command>.bats            # One test file per command

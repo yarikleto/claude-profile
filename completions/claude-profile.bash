@@ -4,7 +4,7 @@ _claude_profile_completions() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  commands="new fork use list current save show edit delete deactivate history diff restore prompt-init statusline version help"
+  commands="new fork use list current save show edit delete deactivate history diff restore statusline version help"
 
   if [[ ${COMP_CWORD} -eq 1 ]]; then
     COMPREPLY=($(compgen -W "$commands" -- "$cur"))
@@ -25,11 +25,6 @@ _claude_profile_completions() {
       ;;
     new|fork)
       COMPREPLY=()  # free-form name
-      ;;
-    prompt-init)
-      if [[ ${COMP_CWORD} -eq 2 ]]; then
-        COMPREPLY=($(compgen -W "zsh bash plain" -- "$cur"))
-      fi
       ;;
     statusline)
       if [[ ${COMP_CWORD} -eq 2 ]]; then

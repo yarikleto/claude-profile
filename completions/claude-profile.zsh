@@ -16,7 +16,6 @@ _claude-profile() {
     'history:View change history'
     'diff:Show changes'
     'restore:Restore to a point in time'
-    'prompt-init:Shell prompt integration'
     'statusline:Claude Code status line'
     'version:Print version'
     'help:Show help'
@@ -40,10 +39,6 @@ _claude-profile() {
         ;;
       new|fork)
         _message 'profile name'
-        ;;
-      prompt-init)
-        local -a shells=('zsh' 'bash' 'plain')
-        _describe 'shell' shells
         ;;
       statusline)
         local -a actions=('install:Install status line script' 'uninstall:Remove status line script')
