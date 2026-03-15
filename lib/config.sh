@@ -1,6 +1,6 @@
 # config.sh — Constants and managed items configuration
 
-VERSION="0.1.1"
+VERSION="0.1.2"
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 PROFILES_DIR="$CLAUDE_DIR/profiles"
 CURRENT_FILE="$PROFILES_DIR/.current"
