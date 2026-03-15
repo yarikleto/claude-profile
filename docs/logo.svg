@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200">
+  <defs>
+    <linearGradient id="card1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#D97757;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C4643F;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="card2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8956F;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D97757;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="card3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F0B89A;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E8956F;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow1" x="-5%" y="-5%" width="115%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="shadow2" x="-5%" y="-5%" width="115%" height="120%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Card stack — three profile cards fanning out -->
+  <!-- Back card (lightest) -->
+  <g transform="translate(80, 100)" filter="url(#shadow2)">
+    <rect x="-44" y="-58" width="88" height="108" rx="10" ry="10" fill="url(#card3)" transform="rotate(-12)"/>
+    <!-- Settings lines -->
+    <g transform="rotate(-12)" opacity="0.5">
+      <rect x="-28" y="-38" width="32" height="4" rx="2" fill="#fff"/>
+      <rect x="-28" y="-28" width="24" height="4" rx="2" fill="#fff"/>
+      <rect x="-28" y="-18" width="36" height="4" rx="2" fill="#fff"/>
+    </g>
+  </g>
+
+  <!-- Middle card -->
+  <g transform="translate(80, 100)" filter="url(#shadow2)">
+    <rect x="-44" y="-58" width="88" height="108" rx="10" ry="10" fill="url(#card2)" transform="rotate(-4)"/>
+    <g transform="rotate(-4)" opacity="0.6">
+      <rect x="-28" y="-38" width="28" height="4" rx="2" fill="#fff"/>
+      <rect x="-28" y="-28" width="36" height="4" rx="2" fill="#fff"/>
+      <rect x="-28" y="-18" width="20" height="4" rx="2" fill="#fff"/>
+    </g>
+  </g>
+
+  <!-- Front card (darkest, active) -->
+  <g transform="translate(80, 100)" filter="url(#shadow1)">
+    <rect x="-44" y="-58" width="88" height="108" rx="10" ry="10" fill="url(#card1)" transform="rotate(4)"/>
+    <g transform="rotate(4)">
+      <!-- Config lines -->
+      <rect x="-28" y="-38" width="36" height="4" rx="2" fill="#fff" opacity="0.9"/>
+      <rect x="-28" y="-28" width="24" height="4" rx="2" fill="#fff" opacity="0.9"/>
+      <rect x="-28" y="-18" width="32" height="4" rx="2" fill="#fff" opacity="0.9"/>
+      <!-- Active dot -->
+      <circle cx="26" cy="-40" r="6" fill="#2ECC71" stroke="#fff" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- Switch arrows -->
+  <g transform="translate(148, 94)" opacity="0.55">
+    <path d="M0,0 L14,-8 L14,-3 L28,-3 L28,3 L14,3 L14,8 Z" fill="#D97757" transform="rotate(-30)"/>
+    <path d="M0,0 L-14,8 L-14,3 L-28,3 L-28,-3 L-14,-3 L-14,-8 Z" fill="#D97757" transform="translate(28, 18) rotate(-30)"/>
+  </g>
+
+  <!-- Text: claude-profile -->
+  <text x="190" y="92" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="46" font-weight="700" fill="#1a1a2e" letter-spacing="-1">
+    claude-profile
+  </text>
+
+  <!-- Tagline -->
+  <text x="192" y="120" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#6b7280" letter-spacing="0.5">
+    Switch Claude Code configurations instantly
+  </text>
+</svg>

@@ -1,0 +1,116 @@
+# profile.sh — Core profile operations: new, fork, use, save, deactivate
+
+cmd_new() {
+  local name="${1:-}"
+  _require_profile_name "$name" "claude-profile new <name>"
+  _ensure_original_backup
+
+  local profile_dir="$PROFILES_DIR/$name"
+  if [[ -d "$profile_dir" ]]; then
+    err "Profile '$name' already exists"; exit 1
+  fi
+
+  mkdir -p "$profile_dir"
+  _git_init "$profile_dir"
+
+  ok "Profile '$name' created (clean)"
+  _show_summary "$profile_dir"
+  echo -e "  ${DIM}Activate with: claude-profile use $name${NC}"
+}
+
+cmd_fork() {
+  local name="${1:-}"
+  _require_profile_name "$name" "claude-profile fork <name>"
+  _ensure_original_backup
+
+  local profile_dir="$PROFILES_DIR/$name"
+  if [[ -d "$profile_dir" ]]; then
+    err "Profile '$name' already exists"; exit 1
+  fi
+
+  mkdir -p "$profile_dir"
+
+  local current
+  current="$(get_current)"
+  if [[ -n "$current" ]]; then
+    info "Forking from active profile '$current'..."
+  else
+    info "Forking from original state..."
+  fi
+  _snapshot_current "$profile_dir"
+  _git_init "$profile_dir"
+
+  ok "Profile '$name' created"
+  _show_summary "$profile_dir"
+  echo -e "  ${DIM}Activate with: claude-profile use $name${NC}"
+}
+
+cmd_use() {
+  local name="${1:-}"
+  _require_profile_name "$name" "claude-profile use <name>"
+
+  local profile_dir="$PROFILES_DIR/$name"
+  if [[ ! -d "$profile_dir" ]]; then
+    err "Profile '$name' not found"
+    cmd_list
+    exit 1
+  fi
+
+  local current
+  current="$(get_current)"
+
+  if [[ "$current" == "$name" ]]; then
+    ok "Profile '$name' is already active"
+    return
+  fi
+
+  _ensure_original_backup
+
+  # Auto-save current profile before switching
+  if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    info "Saving profile '$current'..."
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'"
+  fi
+
+  info "Switching to '$name'..."
+  _load_profile_to_live "$profile_dir"
+
+  set_current "$name"
+  ok "Active profile: ${BOLD}$name${NC}"
+  _show_summary "$profile_dir"
+}
+
+cmd_save() {
+  local name="" msg=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -m) msg="${2:?-m requires a message}"; shift 2 ;;
+      *)  name="$1"; shift ;;
+    esac
+  done
+
+  name="${name:-$(get_current)}"
+  _require_profile_name "$name" "claude-profile save [name] [-m message]"
+
+  local profile_dir="$PROFILES_DIR/$name"
+  mkdir -p "$profile_dir"
+  _save_current_to "$profile_dir" "${msg:-Manual save}"
+  ok "Saved to profile '$name'"
+}
+
+cmd_deactivate() {
+  local current
+  current="$(get_current)"
+  if [[ -z "$current" ]]; then
+    warn "No profile is active"; return
+  fi
+
+  info "Saving profile '$current'..."
+  _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate"
+
+  info "Restoring original state..."
+  _restore_from_backup
+
+  clear_current
+  ok "Profile deactivated, restored original state"
+}
