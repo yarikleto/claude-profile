@@ -82,72 +82,7 @@ if [[ ! -d "$SEED_DIR" ]]; then
 fi
 
 # ─── Install statusline ─────────────────────────────────────
-STATUSLINE_SCRIPT="$CLAUDE_DIR/__profiles__/statusline.sh"
-SETTINGS="$CLAUDE_DIR/settings.json"
-
-# Create the statusline script
-cat > "$STATUSLINE_SCRIPT" <<'SCRIPT'
-#!/bin/bash
-input=$(cat)
-model=$(echo "$input" | grep -o '"display_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-model="${model:-Claude}"
-profile_file="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__/.current"
-if [[ -f "$profile_file" ]]; then
-  profile="$(tr -cd 'a-zA-Z0-9._-' < "$profile_file")"
-  echo "${model} · profile: ${profile}"
-else
-  echo "${model}"
-fi
-SCRIPT
-chmod +x "$STATUSLINE_SCRIPT"
-
-# Add statusLine to settings.json only if not already configured
-if [[ -f "$SETTINGS" ]]; then
-  if ! grep -q '"statusLine"' "$SETTINGS"; then
-    _install_added=false
-    if command -v jq &>/dev/null; then
-      tmp="$(mktemp)"
-      if jq '. + {"statusLine": {"type": "command", "command": "~/.claude/__profiles__/statusline.sh"}}' \
-        "$SETTINGS" > "$tmp" 2>/dev/null; then
-        mv "$tmp" "$SETTINGS"
-        _install_added=true
-      else
-        rm -f "$tmp"
-      fi
-    fi
-    if [[ "$_install_added" != true ]] && command -v python3 &>/dev/null; then
-      if python3 -c "
-import json, sys
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-data['statusLine'] = {'type': 'command', 'command': '~/.claude/__profiles__/statusline.sh'}
-with open(sys.argv[1], 'w') as f:
-    json.dump(data, f, indent=2)
-" "$SETTINGS" 2>/dev/null; then
-        _install_added=true
-      fi
-    fi
-    if [[ "$_install_added" != true ]] && command -v node &>/dev/null; then
-      if node -e "
-const fs = require('fs');
-const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-data.statusLine = {type: 'command', command: '~/.claude/__profiles__/statusline.sh'};
-fs.writeFileSync(process.argv[1], JSON.stringify(data, null, 2) + '\n');
-" "$SETTINGS" 2>/dev/null; then
-        _install_added=true
-      fi
-    fi
-    if [[ "$_install_added" == true ]]; then
-      ok "Status line added to settings.json"
-    else
-      info "Add statusLine manually to settings.json:"
-      echo '  "statusLine": { "type": "command", "command": "~/.claude/__profiles__/statusline.sh" }'
-    fi
-  fi
-elif [[ ! -f "$SETTINGS" ]]; then
-  echo '{ "statusLine": { "type": "command", "command": "~/.claude/__profiles__/statusline.sh" } }' > "$SETTINGS"
-  ok "Created settings.json with status line"
-fi
+"$INSTALL_DIR/claude-profile" statusline install
 
 # ─── Check PATH ─────────────────────────────────────────────
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then

@@ -1,48 +1,37 @@
 # ui.sh — Shell prompt and Claude Code status line integration
 
-# Add statusLine key to a JSON settings file using available JSON tools.
-# Falls back through jq → python3 → node, or errors with manual instructions.
-_add_statusline_to_json() {
-  local settings="$1" script_path="$2"
+# Safely merge a key into a JSON file. Uses jq, python3, or node (first available).
+_json_merge() {
+  local file="$1" key="$2" value="$3"
   local tmp
-  tmp="$(mktemp)"
 
   if command -v jq &>/dev/null; then
-    if jq --arg cmd "$script_path" \
-      '. + {"statusLine": {"type": "command", "command": $cmd}}' \
-      "$settings" > "$tmp" 2>/dev/null; then
-      mv "$tmp" "$settings"
-      return 0
+    tmp="$(mktemp)"
+    if jq --arg v "$value" ". + {\"$key\": {\"type\": \"command\", \"command\": \$v}}" "$file" > "$tmp" 2>/dev/null; then
+      mv "$tmp" "$file"; return 0
     fi
+    rm -f "$tmp"
   fi
 
   if command -v python3 &>/dev/null; then
-    if python3 -c "
+    python3 -c "
 import json, sys
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-data['statusLine'] = {'type': 'command', 'command': sys.argv[2]}
-with open(sys.argv[1], 'w') as f:
-    json.dump(data, f, indent=2)
-" "$settings" "$script_path" 2>/dev/null; then
-      rm -f "$tmp"
-      return 0
-    fi
+p = sys.argv[1]
+with open(p) as f: d = json.load(f)
+d[sys.argv[2]] = {'type': 'command', 'command': sys.argv[3]}
+with open(p, 'w') as f: json.dump(d, f, indent=2)
+" "$file" "$key" "$value" 2>/dev/null && return 0
   fi
 
   if command -v node &>/dev/null; then
-    if node -e "
-const fs = require('fs');
-const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-data.statusLine = {type: 'command', command: process.argv[2]};
-fs.writeFileSync(process.argv[1], JSON.stringify(data, null, 2) + '\n');
-" "$settings" "$script_path" 2>/dev/null; then
-      rm -f "$tmp"
-      return 0
-    fi
+    node -e "
+const fs=require('fs'), f=process.argv[1];
+const d=JSON.parse(fs.readFileSync(f,'utf8'));
+d[process.argv[2]]={type:'command',command:process.argv[3]};
+fs.writeFileSync(f,JSON.stringify(d,null,2)+'\n');
+" "$file" "$key" "$value" 2>/dev/null && return 0
   fi
 
-  rm -f "$tmp"
   return 1
 }
 
@@ -75,7 +64,7 @@ SCRIPT
           info "Manually set it to:"
           echo "  \"statusLine\": { \"type\": \"command\", \"command\": \"$statusline_script\" }"
         else
-          if _add_statusline_to_json "$settings" "$statusline_script"; then
+          if _json_merge "$settings" "statusLine" "$statusline_script"; then
             ok "Status line configured in settings.json"
           else
             err "Could not update settings.json (no jq, python3, or node found)"
