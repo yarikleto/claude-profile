@@ -38,8 +38,7 @@ case "$cmd" in
   statusline)     cmd_statusline "$@" ;;
   version|-v|--version) echo "claude-profile $VERSION" ;;
   help|--help|-h)
-    cat <<HELP
-${BOLD}claude-profile${NC} v$VERSION — Switch between Claude Code configurations
+    echo -e "${BOLD}claude-profile${NC} v$VERSION — Switch between Claude Code configurations
 
 ${BOLD}USAGE${NC}
   claude-profile <command> [options]
@@ -70,12 +69,12 @@ ${BOLD}OTHER${NC}
   help                          Show this help
 
 ${BOLD}EXAMPLES${NC}
-  claude-profile fork default          # Save current setup as "default"
+  claude-profile fork default          # Save current setup as \"default\"
   claude-profile new experiment        # Clean empty profile
   claude-profile fork review           # Fork current profile
   claude-profile use review            # Switch to profile
 
-  eval "\$(claude-profile prompt-init zsh)"   # Profile in shell prompt
+  eval \"\\\$(claude-profile prompt-init zsh)\"   # Profile in shell prompt
   claude-profile statusline install           # Profile in Claude Code
 
 ${BOLD}WHAT GETS SWITCHED${NC}
@@ -84,8 +83,7 @@ ${BOLD}WHAT GETS SWITCHED${NC}
 
 ${BOLD}FILES${NC}
   Profiles dir:  \$CLAUDE_CODE_HOME/profiles (default: ~/.claude/profiles)
-
-HELP
+"
     ;;
   *)
     err "Unknown command: $cmd"
