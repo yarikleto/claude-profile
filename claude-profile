@@ -51,7 +51,8 @@ ${CYAN}${BOLD}COMMANDS${NC}
   ${BOLD}show${NC} ${DIM}[name]${NC}                   Show profile contents
   ${BOLD}edit${NC} ${DIM}[name]${NC}                   Open profile in editor
   ${BOLD}delete${NC} ${DIM}<name> [-f]${NC}            Delete a profile
-  ${BOLD}deactivate${NC}                    Turn off profiles, restore original
+  ${BOLD}deactivate${NC} ${DIM}[--keep]${NC}             Turn off profiles, restore original
+                                  ${DIM}--keep: detach without restoring backup${NC}
 
 ${CYAN}${BOLD}HISTORY${NC}
   ${BOLD}save${NC} ${DIM}[name] [-m message]${NC}      Save & commit current state
@@ -80,7 +81,7 @@ ${CYAN}${BOLD}WHAT GETS SWITCHED${NC}
   ${BOLD}projects/${NC}  ${BOLD}agent-memory/${NC}  ${BOLD}todos/${NC}  ${BOLD}plans/${NC}  ${BOLD}tasks/${NC} ${DIM}(bulk — moved, not copied)${NC}
 
 ${CYAN}${BOLD}FILES${NC}
-  Profiles dir:  ${BOLD}\$CLAUDE_CODE_HOME/profiles${NC} ${DIM}(default: ~/.claude/profiles)${NC}
+  Profiles dir:  ${BOLD}\$CLAUDE_CODE_HOME/__profiles__${NC} ${DIM}(default: ~/.claude/__profiles__)${NC}
 "
     ;;
   *)

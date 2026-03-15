@@ -22,7 +22,7 @@ _claude-profile() {
   )
 
   _claude_profile_profiles() {
-    local profiles_dir="${CLAUDE_CODE_HOME:-$HOME/.claude}/profiles"
+    local profiles_dir="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__"
     local -a profiles
     if [[ -d "$profiles_dir" ]]; then
       profiles=("${(@f)$(find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)}")

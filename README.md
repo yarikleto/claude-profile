@@ -188,7 +188,7 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 
 ### Custom managed items
 
-Override what files get switched by creating `~/.claude/profiles/.managed`:
+Override what files get switched by creating `~/.claude/__profiles__/.managed`:
 
 ```bash
 # One item per line. Use name:path for files outside ~/.claude/

@@ -42,15 +42,15 @@ setup() {
 
 @test "preserves profiles directory" {
   export CLAUDE_CODE_HOME="$HOME/.claude"
-  mkdir -p "$CLAUDE_CODE_HOME/profiles/myprofile"
-  echo "data" > "$CLAUDE_CODE_HOME/profiles/myprofile/settings.json"
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/myprofile"
+  echo "data" > "$CLAUDE_CODE_HOME/__profiles__/myprofile/settings.json"
 
   run bash "$REPO_DIR/uninstall.sh"
   [ "$status" -eq 0 ]
 
   # Profiles must still exist
-  [ -d "$CLAUDE_CODE_HOME/profiles/myprofile" ]
-  [ -f "$CLAUDE_CODE_HOME/profiles/myprofile/settings.json" ]
+  [ -d "$CLAUDE_CODE_HOME/__profiles__/myprofile" ]
+  [ -f "$CLAUDE_CODE_HOME/__profiles__/myprofile/settings.json" ]
 }
 
 @test "prints success message" {

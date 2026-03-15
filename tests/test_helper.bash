@@ -65,10 +65,10 @@ run_cli_ok() {
 
 # Get profile directory path
 profile_dir() {
-  echo "$CLAUDE_CODE_HOME/profiles/$1"
+  echo "$CLAUDE_CODE_HOME/__profiles__/$1"
 }
 
 # Get backup directory path
 backup_dir() {
-  echo "$CLAUDE_CODE_HOME/profiles/.pre-profiles-backup"
+  echo "$CLAUDE_CODE_HOME/__profiles__/.pre-profiles-backup"
 }

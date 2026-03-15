@@ -33,6 +33,6 @@ for f in \
 done
 
 echo ""
-info "Profiles are kept in ~/.claude/profiles/ — delete manually if needed."
+info "Profiles are kept in ~/.claude/__profiles__/ — delete manually if needed."
 echo ""
 ok "Uninstall complete"

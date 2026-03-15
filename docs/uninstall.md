@@ -15,14 +15,14 @@ This saves the active profile, copies your original files back from the backup, 
 **If `claude-profile` is no longer installed**, restore manually:
 
 ```bash
-cp -R ~/.claude/profiles/.pre-profiles-backup/settings.json ~/.claude/settings.json
-cp -R ~/.claude/profiles/.pre-profiles-backup/CLAUDE.md ~/.claude/CLAUDE.md
-cp -R ~/.claude/profiles/.pre-profiles-backup/skills ~/.claude/skills
-cp -R ~/.claude/profiles/.pre-profiles-backup/agents ~/.claude/agents
-cp -R ~/.claude/profiles/.pre-profiles-backup/rules ~/.claude/rules
-cp -R ~/.claude/profiles/.pre-profiles-backup/keybindings.json ~/.claude/keybindings.json
-cp -R ~/.claude/profiles/.pre-profiles-backup/.claude.json ~/.claude.json
-rm -f ~/.claude/profiles/.current
+cp -R ~/.claude/__profiles__/.pre-profiles-backup/settings.json ~/.claude/settings.json
+cp -R ~/.claude/__profiles__/.pre-profiles-backup/CLAUDE.md ~/.claude/CLAUDE.md
+cp -R ~/.claude/__profiles__/.pre-profiles-backup/skills ~/.claude/skills
+cp -R ~/.claude/__profiles__/.pre-profiles-backup/agents ~/.claude/agents
+cp -R ~/.claude/__profiles__/.pre-profiles-backup/rules ~/.claude/rules
+cp -R ~/.claude/__profiles__/.pre-profiles-backup/keybindings.json ~/.claude/keybindings.json
+cp -R ~/.claude/__profiles__/.pre-profiles-backup/.claude.json ~/.claude.json
+rm -f ~/.claude/__profiles__/.current
 ```
 
 Not every file will exist — `cp` will print errors for missing ones, which is fine.
@@ -60,10 +60,10 @@ CLAUDE_PROFILE_INSTALL_DIR=~/bin bash uninstall.sh
 
 ## Step 3: Remove profile data
 
-Profiles live entirely inside `~/.claude/profiles/`. This directory is not used by Claude Code itself:
+Profiles live entirely inside `~/.claude/__profiles__/`. This directory is not used by Claude Code itself:
 
 ```bash
-rm -rf ~/.claude/profiles
+rm -rf ~/.claude/__profiles__
 ```
 
 Make sure you completed Step 1 first, or your `~/.claude/` files will be from whichever profile was last active.
@@ -77,13 +77,11 @@ rm -f ~/.claude/statusline-profile.sh
 # Also remove the "statusLine" entry from ~/.claude/settings.json
 ```
 
-**Shell prompt** — remove the `eval "$(claude-profile prompt-init ...)"` line from your `.zshrc` or `.bashrc`.
-
 ## Verify
 
 ```bash
 which claude-profile              # should print nothing
-ls ~/.claude/profiles             # should say "No such file or directory"
+ls ~/.claude/__profiles__             # should say "No such file or directory"
 cat ~/.claude/settings.json       # should be your original settings
 ```
 

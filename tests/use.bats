@@ -6,8 +6,11 @@ load test_helper
   run_cli_ok new clean
   run_cli_ok use clean
 
-  [ ! -f "$CLAUDE_CODE_HOME/settings.json" ]
-  [ ! -f "$HOME/.claude.json" ]
+  # New profile has minimal seeded config
+  [ -f "$CLAUDE_CODE_HOME/settings.json" ]
+  [[ "$(cat "$CLAUDE_CODE_HOME/settings.json")" == "{}" ]]
+  [ -f "$HOME/.claude.json" ]
+  [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
 }
 
 @test "switches back restores files" {
@@ -35,8 +38,8 @@ load test_helper
   run_cli_ok fork default
   run_cli_ok use default
 
-  [ -f "$CLAUDE_CODE_HOME/profiles/.current" ]
-  [ "$(cat "$CLAUDE_CODE_HOME/profiles/.current")" = "default" ]
+  [ -f "$CLAUDE_CODE_HOME/__profiles__/.current" ]
+  [ "$(cat "$CLAUDE_CODE_HOME/__profiles__/.current")" = "default" ]
 }
 
 @test "no-op when already active" {
@@ -57,7 +60,8 @@ load test_helper
   run_cli_ok fork default
   run_cli_ok new nomcp
   run_cli_ok use nomcp
-  [ ! -f "$HOME/.claude.json" ]
+  # New profile has minimal seeded .claude.json (no MCP servers)
+  [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
 
   run_cli_ok use default
   [ -f "$HOME/.claude.json" ]

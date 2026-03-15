@@ -30,9 +30,20 @@ _backup_raw_state() {
   done
 }
 
+_ensure_seed_dir() {
+  local seed_dir="$PROFILES_DIR/.seed"
+  [[ -d "$seed_dir" ]] && return
+  mkdir -p "$seed_dir"
+  local i
+  for i in "${!SEED_NAMES[@]}"; do
+    echo "${SEED_CONTENTS[$i]}" > "$seed_dir/${SEED_NAMES[$i]}"
+  done
+}
+
 _ensure_original_backup() {
   ensure_dir
   _backup_raw_state
+  _ensure_seed_dir
 }
 
 # Validate that a profile name is safe (no path traversal, no flag injection).

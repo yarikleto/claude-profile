@@ -9,7 +9,7 @@ Development guide for `claude-profile` — a bash CLI tool for switching between
 ### Rules — no exceptions
 
 1. **NEVER run `claude-profile` commands against the real `$HOME`** — not for testing, not for demos, not for "quick checks". Always use an isolated environment.
-2. **NEVER run `rm -rf` on `~/.claude/profiles`** or any real user path during development.
+2. **NEVER run `rm -rf` on `~/.claude/__profiles__`** or any real user path during development.
 3. **ALL testing happens in bats** (which isolates `$HOME` automatically) or in a manually isolated env:
    ```bash
    export HOME=$(mktemp -d)
@@ -22,7 +22,7 @@ Development guide for `claude-profile` — a bash CLI tool for switching between
 
 ### Why this matters
 
-During early development, manual testing in the real `$HOME` destroyed a user's MCP server configuration. The backup was also deleted by `rm -rf ~/.claude/profiles`. The data was unrecoverable. This must never happen again.
+During early development, manual testing in the real `$HOME` destroyed a user's MCP server configuration. The backup was also deleted by `rm -rf ~/.claude/__profiles__`. The data was unrecoverable. This must never happen again.
 
 ## Architecture
 

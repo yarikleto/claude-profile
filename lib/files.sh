@@ -1,5 +1,32 @@
 # files.sh — Copy managed items between live locations and profile directories
 
+# Seed a new (empty) profile with template files.
+# Uses __profiles__/.seed/ if it exists, otherwise falls back to built-in defaults.
+_seed_profile() {
+  local dst="$1"
+  local seed_dir="$PROFILES_DIR/.seed"
+  if [[ -d "$seed_dir" ]]; then
+    # User-defined seed: copy everything from .seed/ into new profile
+    local f
+    for f in "$seed_dir"/* "$seed_dir"/.*; do
+      local base
+      base="$(basename "$f")"
+      if [[ "$base" == "." || "$base" == ".." ]]; then
+        continue
+      fi
+      if [[ -e "$f" ]]; then
+        cp -RH "$f" "$dst/"
+      fi
+    done
+  else
+    # Built-in defaults
+    local i
+    for i in "${!SEED_NAMES[@]}"; do
+      echo "${SEED_CONTENTS[$i]}" > "$dst/${SEED_NAMES[$i]}"
+    done
+  fi
+}
+
 # Copy live ~/.claude/ state into a profile directory.
 # Follows symlinks at the source (user's live files are trusted) so that
 # symlinked settings are captured as regular files in the profile.
@@ -85,6 +112,22 @@ _load_profile_to_live() {
       else
         cp -RP "$profile_dir/$iname" "$target"
       fi
+    fi
+  done
+}
+
+# Move bulk items from a profile dir back to live (used by deactivate --keep).
+_load_bulk_from_profile() {
+  local profile_dir="$1"
+  for item in "${BULK_ITEMS[@]}"; do
+    local target iname
+    target="$(_item_source "$item")"
+    iname="$(_item_name "$item")"
+    if [[ -L "$target" || -e "$target" ]]; then
+      rm -rf "$target"
+    fi
+    if [[ -e "$profile_dir/$iname" && ! -L "$profile_dir/$iname" ]]; then
+      mv "$profile_dir/$iname" "$target"
     fi
   done
 }

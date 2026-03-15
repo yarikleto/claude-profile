@@ -71,6 +71,16 @@ case "$current_shell" in
         install_completions bash "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
 esac
 
+# ─── Create seed directory ──────────────────────────────────
+CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
+SEED_DIR="$CLAUDE_DIR/__profiles__/.seed"
+if [[ ! -d "$SEED_DIR" ]]; then
+  mkdir -p "$SEED_DIR"
+  echo '{}' > "$SEED_DIR/settings.json"
+  echo '{}' > "$SEED_DIR/.claude.json"
+  ok "Created seed templates in $SEED_DIR"
+fi
+
 # ─── Check PATH ─────────────────────────────────────────────
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
   echo ""

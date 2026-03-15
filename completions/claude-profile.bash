@@ -11,7 +11,7 @@ _claude_profile_completions() {
     return
   fi
 
-  local profiles_dir="${CLAUDE_CODE_HOME:-$HOME/.claude}/profiles"
+  local profiles_dir="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__"
   local profiles=""
   if [[ -d "$profiles_dir" ]]; then
     profiles="$(find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null)"

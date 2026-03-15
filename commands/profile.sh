@@ -19,6 +19,9 @@ cmd_new() {
   fi
 
   mkdir -p "$profile_dir"
+
+  _seed_profile "$profile_dir"
+
   _git_init "$profile_dir"
 
   _load_profile_to_live "$profile_dir" --move-bulk
@@ -117,6 +120,11 @@ cmd_save() {
 }
 
 cmd_deactivate() {
+  local keep=false
+  if [[ "${1:-}" == "--keep" ]]; then
+    keep=true
+  fi
+
   local current
   current="$(get_current)"
   if [[ -z "$current" ]]; then
@@ -126,9 +134,16 @@ cmd_deactivate() {
   info "Saving $(_pname "$current")..."
   _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move-bulk
 
-  info "Restoring original state..."
-  _restore_from_backup
-
-  clear_current
-  ok "Deactivated $(_pname "$current"), restored original state"
+  if [[ "$keep" == true ]]; then
+    # Keep current files in place — just detach from profiles
+    _load_bulk_from_profile "$PROFILES_DIR/$current"
+    clear_current
+    ok "Detached from $(_pname "$current") — current config kept as-is"
+    info "You can safely remove ${BOLD}$PROFILES_DIR${NC} when ready"
+  else
+    info "Restoring original state..."
+    _restore_from_backup
+    clear_current
+    ok "Deactivated $(_pname "$current"), restored original state"
+  fi
 }

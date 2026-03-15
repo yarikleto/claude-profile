@@ -7,9 +7,11 @@ load test_helper
   local dir="$(profile_dir clean)"
   [ -d "$dir" ]
   [ -d "$dir/.git" ]
-  [ ! -f "$dir/settings.json" ]
+  # Seeded with minimal config so Claude Code doesn't complain
+  [ -f "$dir/settings.json" ]
+  [[ "$(cat "$dir/settings.json")" == "{}" ]]
   [ ! -d "$dir/skills" ]
-  [[ "$(cat "$CLAUDE_CODE_HOME/profiles/.current")" == "clean" ]]
+  [[ "$(cat "$CLAUDE_CODE_HOME/__profiles__/.current")" == "clean" ]]
 }
 
 @test "rejects duplicate name" {
@@ -23,4 +25,28 @@ load test_helper
   run_cli new
   [ "$status" -ne 0 ]
   [[ "$output" == *"Usage"* ]]
+}
+
+@test "uses custom .seed/ directory when present" {
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/.seed"
+  echo '{"custom": true}' > "$CLAUDE_CODE_HOME/__profiles__/.seed/settings.json"
+  echo '{"mcpServers": {"default": {}}}' > "$CLAUDE_CODE_HOME/__profiles__/.seed/.claude.json"
+
+  run_cli_ok new seeded
+
+  local dir="$(profile_dir seeded)"
+  grep -q '"custom"' "$dir/settings.json"
+  grep -q '"default"' "$dir/.claude.json"
+}
+
+@test "custom .seed/ overrides built-in defaults" {
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/.seed"
+  echo '{"only": "this"}' > "$CLAUDE_CODE_HOME/__profiles__/.seed/settings.json"
+  # No .claude.json in seed — should not be created
+
+  run_cli_ok new custom
+
+  local dir="$(profile_dir custom)"
+  [[ "$(cat "$dir/settings.json")" == '{"only": "this"}' ]]
+  [ ! -f "$dir/.claude.json" ]
 }

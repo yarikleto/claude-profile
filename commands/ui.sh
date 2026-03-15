@@ -11,7 +11,7 @@ cmd_statusline() {
 input=$(cat)
 model=$(echo "$input" | grep -o '"display_name":"[^"]*"' | head -1 | cut -d'"' -f4)
 model="${model:-Claude}"
-profile_file="${CLAUDE_CODE_HOME:-$HOME/.claude}/profiles/.current"
+profile_file="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__/.current"
 if [[ -f "$profile_file" ]]; then
   profile="$(tr -cd 'a-zA-Z0-9._-' < "$profile_file")"
   echo "${model} · profile: ${profile}"

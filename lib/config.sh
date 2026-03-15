@@ -2,10 +2,10 @@
 
 VERSION="0.2.0"
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
-PROFILES_DIR="$CLAUDE_DIR/profiles"
+PROFILES_DIR="$CLAUDE_DIR/__profiles__"
 CURRENT_FILE="$PROFILES_DIR/.current"
 
-# Default managed items. Override via ~/.claude/profiles/.managed
+# Default managed items. Override via ~/.claude/__profiles__/.managed
 _DEFAULT_MANAGED_ITEMS=(
   "settings.json"
   "CLAUDE.md"
@@ -25,6 +25,11 @@ _DEFAULT_BULK_ITEMS=(
   "plans"
   "tasks"
 )
+
+# Seed files for new (empty) profiles so Claude Code doesn't complain.
+# Parallel arrays: SEED_NAMES[i] is the filename, SEED_CONTENTS[i] is its content.
+SEED_NAMES=("settings.json" ".claude.json")
+SEED_CONTENTS=('{}' '{}')
 
 # Validate a managed item path is safe (no traversal, under $HOME for custom paths).
 _validate_managed_item() {

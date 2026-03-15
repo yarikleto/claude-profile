@@ -116,8 +116,8 @@ load test_helper
 # ─── .managed validation ─────────────────────────────────
 
 @test "rejects .managed entries with path traversal" {
-  mkdir -p "$CLAUDE_CODE_HOME/profiles"
-  echo "evil:$HOME/../../etc/passwd" > "$CLAUDE_CODE_HOME/profiles/.managed"
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
+  echo "evil:$HOME/../../etc/passwd" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
 
   run_cli fork managed-test
   [ "$status" -ne 0 ]
@@ -125,8 +125,8 @@ load test_helper
 }
 
 @test "rejects .managed entries with .. component" {
-  mkdir -p "$CLAUDE_CODE_HOME/profiles"
-  echo "evil:../../../etc/shadow" > "$CLAUDE_CODE_HOME/profiles/.managed"
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
+  echo "evil:../../../etc/shadow" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
 
   run_cli fork managed-test
   [ "$status" -ne 0 ]
@@ -134,8 +134,8 @@ load test_helper
 }
 
 @test "accepts valid .managed entries under HOME" {
-  mkdir -p "$CLAUDE_CODE_HOME/profiles"
-  echo "settings.json" > "$CLAUDE_CODE_HOME/profiles/.managed"
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
+  echo "settings.json" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
 
   run_cli_ok fork managed-ok
 }

@@ -43,18 +43,18 @@ load test_helper
   [ "$original_md5" = "$current_md5" ]
 }
 
-@test "isolation: new profile is truly empty" {
+@test "isolation: new profile has only minimal seeded config" {
   run_cli_ok new empty
   run_cli_ok use empty
 
-  # Nothing should exist
-  [ ! -f "$CLAUDE_CODE_HOME/settings.json" ]
+  # Only minimal seeded files should exist
+  [[ "$(cat "$CLAUDE_CODE_HOME/settings.json")" == "{}" ]]
+  [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
   [ ! -f "$CLAUDE_CODE_HOME/CLAUDE.md" ]
   [ ! -d "$CLAUDE_CODE_HOME/agents" ]
   [ ! -d "$CLAUDE_CODE_HOME/skills" ]
   [ ! -d "$CLAUDE_CODE_HOME/rules" ]
   [ ! -f "$CLAUDE_CODE_HOME/keybindings.json" ]
-  [ ! -f "$HOME/.claude.json" ]
 }
 
 @test "isolation: deactivate fully restores after multiple switches" {
@@ -84,9 +84,9 @@ load test_helper
   echo '{"mcpServers": {"custom": {}}}' > "$HOME/.claude.json"
   run_cli_ok save -m "Custom MCP"
 
-  # Switch to without-mcp
+  # Switch to without-mcp (has minimal seeded config)
   run_cli_ok use without-mcp
-  [ ! -f "$HOME/.claude.json" ]
+  [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
 
   # Switch back
   run_cli_ok use with-mcp
