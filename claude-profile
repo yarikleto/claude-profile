@@ -38,51 +38,51 @@ case "$cmd" in
   statusline)     cmd_statusline "$@" ;;
   version|-v|--version) echo "claude-profile $VERSION" ;;
   help|--help|-h)
-    echo -e "${BOLD}claude-profile${NC} v$VERSION — Switch between Claude Code configurations
+    echo -e "${BOLD}claude-profile${NC} ${DIM}v$VERSION${NC} — Switch between Claude Code configurations
 
-${BOLD}USAGE${NC}
-  claude-profile <command> [options]
+${CYAN}${BOLD}USAGE${NC}
+  claude-profile ${DIM}<command> [options]${NC}
 
-${BOLD}COMMANDS${NC}
-  new <name>                    Create a clean empty profile
-  fork <name>                   Copy current state into a new profile
-  use <name>                    Switch to a profile
-  list                          List all profiles
-  current                       Show active profile name
-  show [name]                   Show profile contents
-  edit [name]                   Open profile in editor
-  delete <name> [-f]            Delete a profile
-  deactivate                    Turn off profiles, restore original
+${CYAN}${BOLD}COMMANDS${NC}
+  ${BOLD}new${NC} ${DIM}<name>${NC}                    Create a clean empty profile
+  ${BOLD}fork${NC} ${DIM}<name>${NC}                   Copy current state into a new profile
+  ${BOLD}use${NC} ${DIM}<name>${NC}                    Switch to a profile
+  ${BOLD}list${NC}                          List all profiles
+  ${BOLD}current${NC}                       Show active profile name
+  ${BOLD}show${NC} ${DIM}[name]${NC}                   Show profile contents
+  ${BOLD}edit${NC} ${DIM}[name]${NC}                   Open profile in editor
+  ${BOLD}delete${NC} ${DIM}<name> [-f]${NC}            Delete a profile
+  ${BOLD}deactivate${NC}                    Turn off profiles, restore original
 
-${BOLD}HISTORY${NC}
-  save [name] [-m message]      Save & commit current state
-  history [name]                View change history (git log)
-  diff [name] [commit|date]     Show changes (unsaved or since ref)
-  restore [name] <commit|date>  Restore profile to a point in time
+${CYAN}${BOLD}HISTORY${NC}
+  ${BOLD}save${NC} ${DIM}[name] [-m message]${NC}      Save & commit current state
+  ${BOLD}history${NC} ${DIM}[name]${NC}                View change history (git log)
+  ${BOLD}diff${NC} ${DIM}[name] [commit|date]${NC}     Show changes (unsaved or since ref)
+  ${BOLD}restore${NC} ${DIM}[name] <commit|date>${NC}  Restore profile to a point in time
 
-${BOLD}UI INTEGRATION${NC}
-  prompt-init <shell>           Shell prompt integration (zsh/bash)
-  statusline [install|uninstall] Claude Code status line
+${CYAN}${BOLD}UI INTEGRATION${NC}
+  ${BOLD}prompt-init${NC} ${DIM}<shell>${NC}           Shell prompt integration (zsh/bash)
+  ${BOLD}statusline${NC} ${DIM}[install|uninstall]${NC} Claude Code status line
 
-${BOLD}OTHER${NC}
-  version                       Print version
-  help                          Show this help
+${CYAN}${BOLD}OTHER${NC}
+  ${BOLD}version${NC}                       Print version
+  ${BOLD}help${NC}                          Show this help
 
-${BOLD}EXAMPLES${NC}
-  claude-profile fork default          # Save current setup as \"default\"
-  claude-profile new experiment        # Clean empty profile
-  claude-profile fork review           # Fork current profile
-  claude-profile use review            # Switch to profile
+${CYAN}${BOLD}EXAMPLES${NC}
+  ${DIM}\$${NC} claude-profile fork default          ${DIM}# Save current setup as \"default\"${NC}
+  ${DIM}\$${NC} claude-profile new experiment        ${DIM}# Clean empty profile${NC}
+  ${DIM}\$${NC} claude-profile fork review           ${DIM}# Fork current profile${NC}
+  ${DIM}\$${NC} claude-profile use review            ${DIM}# Switch to profile${NC}
 
-  eval \"\\\$(claude-profile prompt-init zsh)\"   # Profile in shell prompt
-  claude-profile statusline install           # Profile in Claude Code
+  ${DIM}\$${NC} eval \"\\\$(claude-profile prompt-init zsh)\"   ${DIM}# Profile in shell prompt${NC}
+  ${DIM}\$${NC} claude-profile statusline install           ${DIM}# Profile in Claude Code${NC}
 
-${BOLD}WHAT GETS SWITCHED${NC}
-  settings.json  CLAUDE.md  agents/  skills/  rules/  keybindings.json
-  ~/.claude.json (MCP servers)
+${CYAN}${BOLD}WHAT GETS SWITCHED${NC}
+  ${BOLD}settings.json${NC}  ${BOLD}CLAUDE.md${NC}  ${BOLD}agents/${NC}  ${BOLD}skills/${NC}  ${BOLD}rules/${NC}  ${BOLD}keybindings.json${NC}
+  ${BOLD}~/.claude.json${NC} ${DIM}(MCP servers)${NC}
 
-${BOLD}FILES${NC}
-  Profiles dir:  \$CLAUDE_CODE_HOME/profiles (default: ~/.claude/profiles)
+${CYAN}${BOLD}FILES${NC}
+  Profiles dir:  ${BOLD}\$CLAUDE_CODE_HOME/profiles${NC} ${DIM}(default: ~/.claude/profiles)${NC}
 "
     ;;
   *)

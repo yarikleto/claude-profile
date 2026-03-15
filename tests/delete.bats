@@ -3,6 +3,8 @@ load test_helper
 
 @test "removes profile directory" {
   run_cli_ok fork to-delete
+  # fork auto-activates, so switch away first
+  run_cli_ok fork other
   run_cli_ok delete to-delete -f
 
   [ ! -d "$(profile_dir to-delete)" ]

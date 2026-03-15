@@ -6,10 +6,10 @@ cmd_history() {
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ ! -d "$profile_dir/.git" ]]; then
-    warn "No history for profile '$name'"; return
+    warn "No history for profile $(_pname "$name")"; return
   fi
 
-  echo -e "${BOLD}History: $name${NC}"
+  echo -e "${CYAN}${BOLD}History: $name${NC}"
   echo ""
   git -C "$profile_dir" log --format="  %C(yellow)%h%C(reset) %C(dim)%ci%C(reset)  %s" --date=short
 }
@@ -29,7 +29,7 @@ cmd_diff() {
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ ! -d "$profile_dir/.git" ]]; then
-    warn "No history for profile '$name'"; return
+    warn "No history for profile $(_pname "$name")"; return
   fi
 
   if [[ -z "$ref" ]]; then
@@ -41,7 +41,7 @@ cmd_diff() {
 
 _diff_unsaved() {
   local name="$1" profile_dir="$2"
-  echo -e "${BOLD}Unsaved changes in '$name':${NC}"
+  echo -e "${CYAN}${BOLD}Unsaved changes: $name${NC}"
   echo ""
 
   local tmp
@@ -73,7 +73,7 @@ _diff_since_ref() {
   local resolved
   resolved="$(_git_resolve_ref "$profile_dir" "$ref")"
 
-  echo -e "${BOLD}Changes since $ref in '$name':${NC}"
+  echo -e "${CYAN}${BOLD}Changes since $ref: $name${NC}"
   echo ""
   git -C "$profile_dir" diff "$resolved"..HEAD --stat --
   echo ""
@@ -97,7 +97,7 @@ cmd_restore() {
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ ! -d "$profile_dir/.git" ]]; then
-    err "No history for profile '$name'"; exit 1
+    err "No history for profile $(_pname "$name")"; exit 1
   fi
 
   local resolved
@@ -105,7 +105,7 @@ cmd_restore() {
 
   local short
   short="$(git -C "$profile_dir" log --format='%h %s' -1 "$resolved" --)"
-  info "Restoring '$name' to: $short"
+  info "Restoring $(_pname "$name") to: ${YELLOW}$short${NC}"
 
   # Restore files from git (not .git itself)
   for item in "${MANAGED_ITEMS[@]}"; do
@@ -122,5 +122,5 @@ cmd_restore() {
     _load_profile_to_live "$profile_dir"
   fi
 
-  ok "Restored '$name' to $ref"
+  ok "Restored $(_pname "$name") to ${YELLOW}$ref${NC}"
 }

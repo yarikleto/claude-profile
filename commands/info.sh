@@ -11,14 +11,16 @@ cmd_list() {
     local name
     name="$(basename "$dir")"
     if [[ "$name" == "$current" ]]; then
-      echo -e "  ${GREEN}●${NC} ${BOLD}$name${NC} ${DIM}(active)${NC}"
+      echo -e "  ${GREEN}●${NC} ${CYAN}${BOLD}$name${NC} ${DIM}(active)${NC}"
     else
       echo -e "  ${DIM}○${NC} $name"
     fi
   done
 
   if [[ $has_profiles -eq 0 ]]; then
-    warn "No profiles yet. Create one with: claude-profile fork <name>"
+    echo ""
+    warn "No profiles yet"
+    echo -e "  ${DIM}Create one with:${NC} ${BOLD}claude-profile fork <name>${NC}"
   fi
 }
 
@@ -38,7 +40,7 @@ cmd_show() {
   _require_profile_name "$name" "claude-profile show <name>"
   _require_profile_exists "$name"
 
-  echo -e "${BOLD}$name${NC}"
+  echo -e "${CYAN}${BOLD}$name${NC}"
   _show_summary "$PROFILES_DIR/$name"
 }
 
@@ -70,7 +72,7 @@ cmd_delete() {
   local current
   current="$(get_current)"
   if [[ "$name" == "$current" ]]; then
-    err "Cannot delete the active profile. Switch first: claude-profile use <other>"
+    err "Cannot delete the active profile. Switch first: ${BOLD}claude-profile use <other>${NC}"
     exit 1
   fi
 
@@ -80,5 +82,5 @@ cmd_delete() {
   fi
 
   rm -rf "$PROFILES_DIR/$name"
-  ok "Deleted profile '$name'"
+  ok "Deleted $(_pname "$name")"
 }

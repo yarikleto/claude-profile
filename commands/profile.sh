@@ -7,14 +7,14 @@ cmd_new() {
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ -d "$profile_dir" ]]; then
-    err "Profile '$name' already exists"; exit 1
+    err "Profile '$(_pname "$name")' already exists"; exit 1
   fi
 
   # Auto-save current profile before switching
   local current
   current="$(get_current)"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
-    info "Saving profile '$current'..."
+    info "Saving profile $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'"
   fi
 
@@ -23,7 +23,7 @@ cmd_new() {
 
   _load_profile_to_live "$profile_dir"
   set_current "$name"
-  ok "Profile '$name' created and activated (clean)"
+  ok "Created and activated $(_pname "$name") ${DIM}(clean)${NC}"
 }
 
 cmd_fork() {
@@ -33,7 +33,7 @@ cmd_fork() {
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ -d "$profile_dir" ]]; then
-    err "Profile '$name' already exists"; exit 1
+    err "Profile '$(_pname "$name")' already exists"; exit 1
   fi
 
   mkdir -p "$profile_dir"
@@ -43,12 +43,12 @@ cmd_fork() {
 
   # Auto-save current profile before switching
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
-    info "Saving profile '$current'..."
+    info "Saving profile $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before fork '$name'"
   fi
 
   if [[ -n "$current" ]]; then
-    info "Forking from active profile '$current'..."
+    info "Forking from $(_pname "$current")..."
   else
     info "Forking from original state..."
   fi
@@ -56,7 +56,7 @@ cmd_fork() {
   _git_init "$profile_dir"
 
   set_current "$name"
-  ok "Profile '$name' created and activated"
+  ok "Created and activated $(_pname "$name")"
   _show_summary "$profile_dir"
 }
 
@@ -66,7 +66,7 @@ cmd_use() {
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ ! -d "$profile_dir" ]]; then
-    err "Profile '$name' not found"
+    err "Profile '$(_pname "$name")' not found"
     cmd_list
     exit 1
   fi
@@ -75,7 +75,7 @@ cmd_use() {
   current="$(get_current)"
 
   if [[ "$current" == "$name" ]]; then
-    ok "Profile '$name' is already active"
+    ok "$(_pname "$name") is already active"
     return
   fi
 
@@ -83,15 +83,15 @@ cmd_use() {
 
   # Auto-save current profile before switching
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
-    info "Saving profile '$current'..."
+    info "Saving $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'"
   fi
 
-  info "Switching to '$name'..."
+  info "Switching to $(_pname "$name")..."
   _load_profile_to_live "$profile_dir"
 
   set_current "$name"
-  ok "Active profile: ${BOLD}$name${NC}"
+  ok "Active profile: $(_pname "$name")"
   _show_summary "$profile_dir"
 }
 
@@ -110,7 +110,7 @@ cmd_save() {
   local profile_dir="$PROFILES_DIR/$name"
   mkdir -p "$profile_dir"
   _save_current_to "$profile_dir" "${msg:-Manual save}"
-  ok "Saved to profile '$name'"
+  ok "Saved $(_pname "$name")"
 }
 
 cmd_deactivate() {
@@ -120,12 +120,12 @@ cmd_deactivate() {
     warn "No profile is active"; return
   fi
 
-  info "Saving profile '$current'..."
+  info "Saving $(_pname "$current")..."
   _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate"
 
   info "Restoring original state..."
   _restore_from_backup
 
   clear_current
-  ok "Profile deactivated, restored original state"
+  ok "Deactivated $(_pname "$current"), restored original state"
 }

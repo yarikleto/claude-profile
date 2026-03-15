@@ -74,11 +74,11 @@ _show_summary() {
     if [[ -d "$dir/$iname" ]]; then
       local count
       count="$(find "$dir/$iname" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
-      echo -e "  ${GREEN}✓${NC} $iname ${DIM}($count items)${NC}"
+      echo -e "  ${GREEN}✓${NC} ${BOLD}$iname${NC} ${DIM}($count items)${NC}"
     elif [[ -f "$dir/$iname" ]]; then
-      echo -e "  ${GREEN}✓${NC} $iname"
+      echo -e "  ${GREEN}✓${NC} ${BOLD}$iname${NC}"
     else
-      echo -e "  ${DIM}·${NC} ${DIM}$iname${NC}"
+      echo -e "  ${DIM}· $iname${NC}"
     fi
   done
 }

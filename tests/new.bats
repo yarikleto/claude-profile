@@ -9,7 +9,7 @@ load test_helper
   [ -d "$dir/.git" ]
   [ ! -f "$dir/settings.json" ]
   [ ! -d "$dir/skills" ]
-  [[ "$(cat "$PROFILES_DIR/.current")" == "clean" ]]
+  [[ "$(cat "$CLAUDE_CODE_HOME/profiles/.current")" == "clean" ]]
 }
 
 @test "rejects duplicate name" {
