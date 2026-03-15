@@ -51,11 +51,27 @@ completions/
 ### Key principles
 
 - **One file = one responsibility**. Commands are in `commands/`, shared logic in `lib/`.
-- **All file operations go through `lib/files.sh`**. Never copy/remove managed items directly in command files — use `_snapshot_current`, `_save_current_to`, `_load_profile_to_live`, `_restore_from_backup`.
+- **All file operations go through `lib/files.sh`**. Never copy/remove managed items directly in command files — use `_snapshot_current`, `_save_current_to`, `_load_profile_to_live`, `_restore_from_backup`, `_seed_profile`.
 - **All git operations go through `lib/git.sh`**. Never call `git` directly in command files — use `_git_init`, `_git_commit`, `_git_resolve_ref`.
 - **Profiles are independent copies, not symlinks**. Switching copies files in/out of `~/.claude/`.
 - **The original backup (`.pre-profiles-backup/`) is never modified** after creation. It's the safety net.
 - **Items outside `~/.claude/`** (like `~/.claude.json`) use the `name:path` format in `MANAGED_ITEMS`. Use `_item_source` for the live path and `_item_name` for the name inside profile directories.
+- **Everything lives in `~/.claude/__profiles__/`** — profiles, backup, seed, statusline script. The `__profiles__` name avoids conflicts with future native Claude Code profiles.
+
+### Two types of managed items
+
+1. **Tracked items** (`MANAGED_ITEMS`) — small config files (settings.json, CLAUDE.md, etc.). Copied on switch, tracked by git in each profile.
+2. **Bulk items** (`BULK_ITEMS`) — large data dirs (projects/, agent-memory/, todos/, plans/, tasks/). **Moved** (not copied) on switch for speed, **copied** on fork/save. Excluded from git via `.gitignore`.
+
+During `use` (switch), pass `--move-bulk` to `_save_current_to` and `_load_profile_to_live`. During `save`/`fork`, don't — let them copy.
+
+### Seed templates
+
+`new` creates profiles seeded from `__profiles__/.seed/` (user-editable). Falls back to built-in defaults in `SEED_NAMES`/`SEED_CONTENTS` (config.sh) if `.seed/` doesn't exist. `install.sh` creates `.seed/` with defaults.
+
+### deactivate --keep
+
+`deactivate --keep` detaches from profiles without restoring the backup — the user's current config stays as-is. This is the migration path for when native profiles arrive. Regular `deactivate` restores from `.pre-profiles-backup/`.
 
 ### Path resolution
 
