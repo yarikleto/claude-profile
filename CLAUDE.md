@@ -212,6 +212,17 @@ bats tests/fork.bats    # Run tests for one command
 bats tests/ --tap       # TAP output for CI
 ```
 
+## Releasing
+
+Version is defined in `lib/config.sh` as `VERSION="X.Y.Z"`. When creating a new release, **always keep the VERSION variable and git tag in sync**:
+
+1. Update `VERSION` in `lib/config.sh`
+2. Commit the change
+3. Tag with the matching version: `git tag v0.1.0`
+4. Push both: `git push origin main --tags`
+
+Never create a git tag without updating `VERSION` first — `claude-profile version` must match the tag.
+
 ## Common pitfalls
 
 - **Variable shadowing**: Use `iname` (not `name`) for managed item names in loops — `name` is often the profile name in the outer function scope.
