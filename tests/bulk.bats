@@ -24,9 +24,16 @@ setup_bulk_data() {
   # tasks/
   mkdir -p "$CLAUDE_CODE_HOME/tasks"
   echo '{"task": 1}' > "$CLAUDE_CODE_HOME/tasks/task1.json"
+
+  # plugins/
+  mkdir -p "$CLAUDE_CODE_HOME/plugins"
+  echo '{"installed": true}' > "$CLAUDE_CODE_HOME/plugins/installed_plugins.json"
+
+  # history.jsonl
+  echo '{"msg": "hello"}' > "$CLAUDE_CODE_HOME/history.jsonl"
 }
 
-@test "fork: captures bulk items (projects, agent-memory, todos, plans, tasks)" {
+@test "fork: captures bulk items (all types)" {
   setup_bulk_data
   run_cli_ok fork myprofile
 
@@ -36,6 +43,29 @@ setup_bulk_data() {
   [ -f "$(profile_dir myprofile)/todos/task1.json" ]
   [ -f "$(profile_dir myprofile)/plans/plan1.json" ]
   [ -f "$(profile_dir myprofile)/tasks/task1.json" ]
+  [ -f "$(profile_dir myprofile)/plugins/installed_plugins.json" ]
+  [ -f "$(profile_dir myprofile)/history.jsonl" ]
+}
+
+@test "use: plugins and history switch between profiles" {
+  setup_bulk_data
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+
+  # Modify alpha
+  run_cli_ok use alpha
+  echo '{"alpha_plugin": true}' > "$CLAUDE_CODE_HOME/plugins/installed_plugins.json"
+  echo '{"msg": "alpha"}' > "$CLAUDE_CODE_HOME/history.jsonl"
+
+  # Switch to beta — should have original data
+  run_cli_ok use beta
+  grep -q '"installed"' "$CLAUDE_CODE_HOME/plugins/installed_plugins.json"
+  grep -q '"hello"' "$CLAUDE_CODE_HOME/history.jsonl"
+
+  # Switch back to alpha — should have alpha data
+  run_cli_ok use alpha
+  grep -q '"alpha_plugin"' "$CLAUDE_CODE_HOME/plugins/installed_plugins.json"
+  grep -q '"alpha"' "$CLAUDE_CODE_HOME/history.jsonl"
 }
 
 @test "use: bulk items switch between profiles" {

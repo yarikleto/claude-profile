@@ -24,6 +24,8 @@ _DEFAULT_BULK_ITEMS=(
   "todos"
   "plans"
   "tasks"
+  "plugins"
+  "history.jsonl"
 )
 
 # Seed files for new (empty) profiles so Claude Code doesn't complain.
