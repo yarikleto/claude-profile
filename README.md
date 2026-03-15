@@ -90,7 +90,15 @@ Each profile is an independent copy of these files:
 | `keybindings.json` | Keyboard shortcuts |
 | `~/.claude.json` | MCP servers and local config |
 
-Everything else (memory, sessions, plugins) stays global across profiles.
+Additionally, these large data directories are isolated per profile (moved instantly during switch, not copied):
+
+| Directory | Contains |
+|-----------|----------|
+| `projects/` | Per-project memory, conversations, CLAUDE.md |
+| `agent-memory/` | Agent memory data |
+| `todos/` | Task lists |
+| `plans/` | Plans |
+| `tasks/` | Task data |
 
 ## Commands
 
@@ -102,6 +110,7 @@ fork <name>             Copy current state into a new profile
 use <name>              Switch to a profile (auto-saves current)
 delete <name> [-f]      Delete a profile
 deactivate              Restore original state, turn off profiles
+deactivate --keep       Detach from profiles, keep current config
 ```
 
 ### Inspecting profiles
@@ -135,16 +144,6 @@ $ claude-profile restore a24a13b    # go back to that point
 
 ### UI integration
 
-**Shell prompt** — see the active profile in your terminal:
-
-```bash
-# Add to .zshrc or .bashrc
-eval "$(claude-profile prompt-init zsh)"
-```
-```
-~/projects/my-app [review] $
-```
-
 **Claude Code status line:**
 
 ```bash
@@ -163,12 +162,15 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 ├── settings.json                ← copied from active profile
 ├── CLAUDE.md                    ← copied from active profile
 ├── agents/                      ← copied from active profile
-└── profiles/
+├── projects/                    ← moved from active profile (bulk)
+└── __profiles__/
     ├── .current                 # tracks which profile is active
+    ├── .seed/                   # templates for `new` (user-editable)
     ├── .pre-profiles-backup/    # your original state (read-only)
     ├── default/                 # profile with its own git history
     │   ├── .git/
     │   ├── settings.json
+    │   ├── projects/            # bulk: moved in/out on switch
     │   └── ...
     └── code-review/             # another independent profile
         ├── .git/
@@ -179,10 +181,11 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 
 ### Safety guarantees
 
-- **Original state backup** — your pre-profiles `~/.claude/` is backed up automatically on first use. The backup is never modified.
+- **Original state backup** — your pre-profiles `~/.claude/` is backed up automatically on first use. The backup is **never modified** by any operation — it's your safety net.
 - **Auto-save on switch** — `use` saves the current profile before switching. No changes are lost.
 - **Full isolation** — each profile is an independent copy. Changing one never affects another.
-- **Clean restore** — `deactivate` restores your original state. Safe to uninstall at any time.
+- **Clean restore** — `deactivate` restores your original state. `deactivate --keep` keeps your current config for migration.
+- **Safe migration path** — when native profiles arrive, `deactivate --keep` lets you exit cleanly without losing any data.
 
 ## Configuration
 
@@ -210,6 +213,34 @@ plugins   # add new items as needed
 | `CLAUDE_PROFILE_INSTALL_DIR` | `~/.local/bin` | Install location for the binary |
 | `CLAUDE_PROFILE_COMPLETIONS_DIR` | *(auto-detect)* | Custom completions directory |
 
+## Migrating to native Claude Code profiles
+
+When Claude Code adds native profile support, you can migrate without losing any data:
+
+```bash
+# 1. Switch to the profile you want to keep as your main config
+claude-profile use my-preferred-profile
+
+# 2. Detach — keeps your current config exactly as-is
+claude-profile deactivate --keep
+
+# 3. Clean up (optional) — remove claude-profile data
+rm -rf ~/.claude/__profiles__
+
+# 4. Uninstall
+brew uninstall claude-profile        # or: bash uninstall.sh
+```
+
+**What `--keep` does:** saves your current profile, then removes the active profile marker *without* restoring the old backup. Your settings, MCP servers, memory, and projects stay exactly where they are — Claude Code sees them as normal config.
+
+**Without `--keep`**, `deactivate` restores the config you had *before* you started using profiles (which may be months old). Use plain `deactivate` only if you want to roll back to that original state.
+
+> **Your original backup is always safe.** It lives at `~/.claude/__profiles__/.pre-profiles-backup/` and is never modified — not by `--keep`, not by regular `deactivate`, not by any profile operation. You can always restore from it manually if needed.
+
+Your profiles are still saved in `~/.claude/__profiles__/<name>/` if you need to reference them later. Delete the directory when you're done.
+
+See the full [migration guide](docs/migration.md) for details and troubleshooting.
+
 ## FAQ
 
 <details>
@@ -233,29 +264,19 @@ Not yet — `claude-profile` manages user-level (`~/.claude/`) configuration. Pr
 <details>
 <summary><strong>How do I uninstall?</strong></summary>
 
-**1. Restore your original config:**
-
 ```bash
-claude-profile deactivate
-```
-
-**2. Remove the CLI:**
-
-```bash
-# Homebrew
-brew uninstall claude-profile
-
-# From source
-bash uninstall.sh
-```
-
-**3. Remove profile data (optional):**
-
-```bash
-rm -rf ~/.claude/profiles
+claude-profile deactivate --keep   # keep current config (or without --keep to restore original)
+brew uninstall claude-profile      # or: bash uninstall.sh
+rm -rf ~/.claude/__profiles__      # remove profile data
 ```
 
 See the full [uninstall guide](docs/uninstall.md) for manual steps and edge cases.
+</details>
+
+<details>
+<summary><strong>What happens when Claude Code adds native profiles?</strong></summary>
+
+See [Migrating to native Claude Code profiles](#migrating-to-native-claude-code-profiles) above. `deactivate --keep` gives you a clean exit path — your config stays intact, and you can start using native profiles immediately.
 </details>
 
 ## Testing
