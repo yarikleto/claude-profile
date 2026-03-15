@@ -61,8 +61,8 @@ ${CYAN}${BOLD}HISTORY${NC}
   ${BOLD}restore${NC} ${DIM}[name] <commit|date>${NC}  Restore profile to a point in time
 
 ${CYAN}${BOLD}UI INTEGRATION${NC}
-  ${BOLD}prompt-init${NC} ${DIM}<shell>${NC}           Shell prompt integration (zsh/bash)
-  ${BOLD}statusline${NC} ${DIM}[install|uninstall]${NC} Claude Code status line
+  ${BOLD}prompt-init${NC} ${DIM}install|uninstall${NC}  Add/remove profile from shell prompt
+  ${BOLD}statusline${NC} ${DIM}install|uninstall${NC}   Add/remove profile from Claude Code status
 
 ${CYAN}${BOLD}OTHER${NC}
   ${BOLD}version${NC}                       Print version
@@ -74,7 +74,7 @@ ${CYAN}${BOLD}EXAMPLES${NC}
   ${DIM}\$${NC} claude-profile fork review           ${DIM}# Fork current profile${NC}
   ${DIM}\$${NC} claude-profile use review            ${DIM}# Switch to profile${NC}
 
-  ${DIM}\$${NC} eval \"\\\$(claude-profile prompt-init zsh)\"   ${DIM}# Profile in shell prompt${NC}
+  ${DIM}\$${NC} claude-profile prompt-init install           ${DIM}# Profile in shell prompt${NC}
   ${DIM}\$${NC} claude-profile statusline install           ${DIM}# Profile in Claude Code${NC}
 
 ${CYAN}${BOLD}WHAT GETS SWITCHED${NC}

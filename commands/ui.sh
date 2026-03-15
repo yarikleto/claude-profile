@@ -1,12 +1,13 @@
 # ui.sh — Shell prompt and Claude Code status line integration
 
-cmd_prompt_init() {
-  local shell="${1:-zsh}"
+_PROMPT_MARKER="# claude-profile prompt"
+_PROMPT_SOURCE_LINE='eval "$(claude-profile prompt-init __SHELL__)"'
 
+_prompt_snippet() {
+  local shell="$1"
   case "$shell" in
     zsh)
       cat <<'INIT'
-# claude-profile prompt integration (zsh)
 _claude_profile_current() {
   local f="${CLAUDE_CODE_HOME:-$HOME/.claude}/profiles/.current"
   if [[ -f "$f" ]]; then
@@ -21,7 +22,6 @@ INIT
       ;;
     bash)
       cat <<'INIT'
-# claude-profile prompt integration (bash)
 _claude_profile_current() {
   local f="${CLAUDE_CODE_HOME:-$HOME/.claude}/profiles/.current"
   if [[ -f "$f" ]]; then
@@ -33,16 +33,88 @@ _claude_profile_current() {
 PS1="${PS1/%\\$ / \$(_claude_profile_current)\\$ }"
 INIT
       ;;
-    plain)
-      cat <<'INIT'
-_claude_profile_current() {
-  local f="${CLAUDE_CODE_HOME:-$HOME/.claude}/profiles/.current"
-  [[ -f "$f" ]] && tr -cd 'a-zA-Z0-9._-' < "$f"
-}
-INIT
-      ;;
     *)
-      err "Supported shells: zsh, bash, plain"
+      err "Supported shells: ${BOLD}zsh${NC}, ${BOLD}bash${NC}"
+      exit 1
+      ;;
+  esac
+}
+
+_detect_shell() {
+  local name
+  name="$(basename "${SHELL:-}")"
+  case "$name" in
+    zsh|bash) echo "$name" ;;
+    *) echo "zsh" ;;
+  esac
+}
+
+_rc_file() {
+  local shell="$1"
+  case "$shell" in
+    zsh)  echo "$HOME/.zshrc" ;;
+    bash) echo "$HOME/.bashrc" ;;
+  esac
+}
+
+cmd_prompt_init() {
+  local action="${1:-}"
+  local shell="${2:-}"
+
+  # If first arg is a shell name (legacy: `prompt-init zsh`), print snippet
+  if [[ "$action" == "zsh" || "$action" == "bash" ]]; then
+    echo "$_PROMPT_MARKER ($action)"
+    _prompt_snippet "$action"
+    return
+  fi
+
+  shell="${shell:-$(_detect_shell)}"
+  local rc
+  rc="$(_rc_file "$shell")"
+  local source_line="${_PROMPT_SOURCE_LINE/__SHELL__/$shell}"
+
+  case "$action" in
+    install)
+      if [[ -f "$rc" ]] && grep -qF "$_PROMPT_MARKER" "$rc"; then
+        ok "Already installed in ${BOLD}$rc${NC}"
+        return
+      fi
+
+      echo "" >> "$rc"
+      echo "$_PROMPT_MARKER" >> "$rc"
+      echo "$source_line" >> "$rc"
+
+      ok "Added to ${BOLD}$rc${NC}"
+      info "Restart your shell or run: ${BOLD}source $rc${NC}"
+      ;;
+
+    uninstall)
+      if [[ ! -f "$rc" ]] || ! grep -qF "$_PROMPT_MARKER" "$rc"; then
+        warn "Not installed in ${BOLD}$rc${NC}"
+        return
+      fi
+
+      local tmp
+      tmp="$(mktemp)"
+      grep -vF "$_PROMPT_MARKER" "$rc" | grep -vF 'claude-profile prompt-init' > "$tmp"
+      mv "$tmp" "$rc"
+
+      ok "Removed from ${BOLD}$rc${NC}"
+      info "Restart your shell or run: ${BOLD}source $rc${NC}"
+      ;;
+
+    "")
+      err "Usage: claude-profile prompt-init ${BOLD}install${NC}|${BOLD}uninstall${NC} [zsh|bash]"
+      echo ""
+      echo -e "  ${BOLD}install${NC}    Add prompt integration to your shell rc file"
+      echo -e "  ${BOLD}uninstall${NC}  Remove it"
+      echo ""
+      echo -e "  ${DIM}Shell is auto-detected from \$SHELL (current: $(_detect_shell))${NC}"
+      exit 1
+      ;;
+
+    *)
+      err "Usage: claude-profile prompt-init ${BOLD}install${NC}|${BOLD}uninstall${NC} [zsh|bash]"
       exit 1
       ;;
   esac
@@ -92,14 +164,14 @@ SCRIPT
         ok "Created settings.json with status line"
       fi
 
-      ok "Status line script installed at $statusline_script"
+      ok "Status line script installed at ${BOLD}$statusline_script${NC}"
       info "Restart Claude Code to see it"
       ;;
 
     uninstall)
       if [[ -f "$statusline_script" ]]; then
         rm "$statusline_script"
-        ok "Removed $statusline_script"
+        ok "Removed ${BOLD}$statusline_script${NC}"
         warn "You may want to remove 'statusLine' from settings.json manually"
       else
         warn "No status line script found"
@@ -107,7 +179,7 @@ SCRIPT
       ;;
 
     *)
-      err "Usage: claude-profile statusline [install|uninstall]"
+      err "Usage: claude-profile statusline ${BOLD}install${NC}|${BOLD}uninstall${NC}"
       exit 1
       ;;
   esac
