@@ -166,6 +166,57 @@ load test_helper
   grep -q '"custom":true' "$custom_file"
 }
 
+@test "use: rejects managed targets that escape HOME through a symlinked parent" {
+  local outside_dir="$BATS_TEST_TMPDIR/outside"
+  mkdir -p "$outside_dir" "$CLAUDE_CODE_HOME/__profiles__/escaped"
+
+  ln -s "$outside_dir" "$HOME/link"
+  echo "custom:$HOME/link/escaped.txt" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
+  echo "written-outside" > "$(profile_dir escaped)/custom"
+
+  git -C "$(profile_dir escaped)" init -q
+  git -C "$(profile_dir escaped)" add -A
+  git -C "$(profile_dir escaped)" \
+    -c user.name=test -c user.email=test@test commit -q -m "init"
+
+  run_cli use escaped
+  [ "$status" -ne 0 ]
+  [ ! -e "$outside_dir/escaped.txt" ]
+}
+
+@test "use: rejects nested symlinks inside managed directories" {
+  local secret="$BATS_TEST_TMPDIR/secret.txt"
+  echo "TOP SECRET" > "$secret"
+
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/symlinked/skills"
+  ln -s "$secret" "$(profile_dir symlinked)/skills/outside"
+
+  git -C "$(profile_dir symlinked)" init -q
+  git -C "$(profile_dir symlinked)" add -A
+  git -C "$(profile_dir symlinked)" \
+    -c user.name=test -c user.email=test@test commit -q -m "init"
+
+  run_cli use symlinked
+  [ "$status" -ne 0 ]
+  [ ! -L "$CLAUDE_CODE_HOME/skills/outside" ]
+}
+
+@test "statusline install: does not overwrite an existing symlink target" {
+  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
+  echo '{"statusLine":null}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  local target="$BATS_TEST_TMPDIR/target.txt"
+  echo "original" > "$target"
+  ln -s "$target" "$CLAUDE_CODE_HOME/__profiles__/statusline.sh"
+
+  run_cli statusline install
+  [ "$status" -ne 0 ]
+
+  local target_contents
+  target_contents="$(cat "$target")"
+  [ "$target_contents" = "original" ]
+}
+
 # ─── Temp file cleanup ───────────────────────────────────
 
 @test "diff: cleans up temp directory even on failure" {

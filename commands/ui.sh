@@ -42,6 +42,10 @@ cmd_statusline() {
 
   case "$action" in
     install)
+      if [[ -L "$statusline_script" ]]; then
+        err "Refusing to overwrite symlink at $statusline_script"
+        exit 1
+      fi
       cat > "$statusline_script" <<'SCRIPT'
 #!/bin/bash
 input=$(cat)

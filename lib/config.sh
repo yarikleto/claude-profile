@@ -68,9 +68,23 @@ _validate_managed_item() {
       err "Invalid managed item '$item': path must be absolute"
       exit 1
     fi
+    # Check literal path first
     if [[ "$path" != "$HOME" && "$path" != "$HOME"/* ]]; then
       err "Invalid managed item '$item': path must be under \$HOME"
       exit 1
+    fi
+    # Resolve symlinks in existing parent dirs to catch escapes via symlinked components
+    local parent
+    parent="$(dirname "$path")"
+    if [[ -d "$parent" ]]; then
+      local resolved_parent
+      resolved_parent="$(cd "$parent" 2>/dev/null && pwd -P)" || resolved_parent="$parent"
+      local resolved_home
+      resolved_home="$(cd "$HOME" 2>/dev/null && pwd -P)" || resolved_home="$HOME"
+      if [[ "$resolved_parent" != "$resolved_home" && "$resolved_parent" != "$resolved_home"/* ]]; then
+        err "Invalid managed item '$item': resolved path escapes \$HOME"
+        exit 1
+      fi
     fi
   fi
 }

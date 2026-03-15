@@ -105,6 +105,13 @@ _load_profile_to_live() {
           err "Cannot read files in $profile_dir/$iname — aborting switch (live files untouched)"
           return 1
         fi
+        # Reject nested symlinks inside managed directories (could escape sandbox)
+        local nested_symlink
+        nested_symlink="$(find "$profile_dir/$iname" -type l 2>/dev/null | head -1)" || true
+        if [[ -n "$nested_symlink" ]]; then
+          err "Symlink found in $profile_dir/$iname — aborting switch (live files untouched)"
+          return 1
+        fi
       fi
     fi
   done
