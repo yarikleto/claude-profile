@@ -117,35 +117,71 @@ setup() {
   diff "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.zfunc/_claude-profile"
 }
 
-@test "zsh completions: prints fpath instructions when .zshrc missing .zfunc" {
+@test "zsh completions: auto-adds fpath and compinit to .zshrc" {
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/zsh"
   echo 'export PATH="/usr/bin:$PATH"' > "$HOME/.zshrc"
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"fpath="* ]]
-  [[ "$output" == *".zfunc"* ]]
-  [[ "$output" == *"compinit"* ]]
+  grep -q 'fpath=(~/.zfunc $fpath)' "$HOME/.zshrc"
+  grep -q 'autoload -Uz compinit && compinit' "$HOME/.zshrc"
+  grep -q '# >>> claude-profile completions >>>' "$HOME/.zshrc"
+  grep -q '# <<< claude-profile completions <<<' "$HOME/.zshrc"
+  [[ "$output" == *"Added completion setup"* ]]
 }
 
-@test "zsh completions: prints fpath instructions when no .zshrc exists" {
+@test "zsh completions: auto-adds to .zshrc when no .zshrc exists" {
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/zsh"
-  # No .zshrc at all
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Enable tab completions (zsh)"* ]]
-  [[ "$output" == *"fpath="* ]]
+  [ -f "$HOME/.zshrc" ]
+  grep -q 'fpath=(~/.zfunc $fpath)' "$HOME/.zshrc"
+  grep -q 'autoload -Uz compinit && compinit' "$HOME/.zshrc"
 }
 
-@test "zsh completions: no fpath instructions when .zshrc already has .zfunc" {
+@test "zsh completions: preserves existing .zshrc content" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  echo 'export MY_VAR="keep-me"' > "$HOME/.zshrc"
+
+  bash "$REPO_DIR/install.sh" >/dev/null 2>&1
+  grep -q 'MY_VAR="keep-me"' "$HOME/.zshrc"
+}
+
+@test "zsh completions: does not duplicate if run twice" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  echo '' > "$HOME/.zshrc"
+
+  bash "$REPO_DIR/install.sh" >/dev/null 2>&1
+  bash "$REPO_DIR/install.sh" >/dev/null 2>&1
+  local count
+  count="$(grep -c '# >>> claude-profile completions >>>' "$HOME/.zshrc")"
+  [ "$count" -eq 1 ]
+}
+
+@test "zsh completions: skips .zshrc when .zshrc already has .zfunc" {
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/zsh"
   echo 'fpath=(~/.zfunc $fpath)' > "$HOME/.zshrc"
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"Enable tab completions (zsh)"* ]]
+  # Should not add the marker block since fpath is already set up
+  ! grep -q '# >>> claude-profile completions >>>' "$HOME/.zshrc"
+}
+
+@test "bash completions: auto-adds source line to .bashrc" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/bash"
+  echo 'export PATH="/usr/bin:$PATH"' > "$HOME/.bashrc"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  grep -q '# >>> claude-profile completions >>>' "$HOME/.bashrc"
+  grep -q 'source ~/.local/share/bash-completion/completions/claude-profile' "$HOME/.bashrc"
+  grep -q '# <<< claude-profile completions <<<' "$HOME/.bashrc"
 }

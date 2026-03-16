@@ -22,14 +22,26 @@ if [[ -d "$INSTALL_LIB" ]]; then
 fi
 
 # Remove completions
+COMPLETIONS_DIR="${CLAUDE_PROFILE_COMPLETIONS_DIR:-}"
 for f in \
   "$HOME/.oh-my-zsh/completions/_claude-profile" \
   "$HOME/.zfunc/_claude-profile" \
   "$HOME/.local/share/zsh/site-functions/_claude-profile" \
-  "$HOME/.local/share/bash-completion/completions/claude-profile"; do
+  "$HOME/.local/share/bash-completion/completions/claude-profile" \
+  ${COMPLETIONS_DIR:+"$COMPLETIONS_DIR/_claude-profile"} \
+  ${COMPLETIONS_DIR:+"$COMPLETIONS_DIR/claude-profile"}; do
   if [[ -f "$f" ]]; then
     rm "$f"
     ok "Removed $f"
+  fi
+done
+
+# Remove completion setup from shell rc files
+for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  if [[ -f "$rc" ]] && grep -q '# >>> claude-profile completions >>>' "$rc"; then
+    sed -i.bak '/# >>> claude-profile completions >>>/,/# <<< claude-profile completions <<</d' "$rc"
+    rm -f "$rc.bak"
+    ok "Removed completion setup from $(basename "$rc")"
   fi
 done
 

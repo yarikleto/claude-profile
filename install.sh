@@ -120,28 +120,35 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
   echo ""
 fi
 
-# ─── Completion setup instructions ───────────────────────────
+# ─── Auto-configure shell completions ───────────────────────
+COMPLETION_BEGIN="# >>> claude-profile completions >>>"
+COMPLETION_END="# <<< claude-profile completions <<<"
+
 if [[ "$COMPLETIONS_NEED_SETUP" == *"zsh"* ]]; then
-  echo ""
-  echo -e "${BOLD}Enable tab completions (zsh):${NC}"
-  echo ""
-  echo "  Add to your ~/.zshrc (before compinit):"
-  echo ""
-  echo "    fpath=(~/.zfunc \$fpath)"
-  echo "    autoload -Uz compinit && compinit"
-  echo ""
-  echo "  Then: source ~/.zshrc"
+  rc="$HOME/.zshrc"
+  if ! grep -q "$COMPLETION_BEGIN" "$rc" 2>/dev/null; then
+    cat >> "$rc" << 'ZSHEOF'
+
+# >>> claude-profile completions >>>
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
+# <<< claude-profile completions <<<
+ZSHEOF
+    ok "Added completion setup to ~/.zshrc"
+  fi
 fi
 
 if [[ "$COMPLETIONS_NEED_SETUP" == *"bash"* ]]; then
-  echo ""
-  echo -e "${BOLD}Enable tab completions (bash):${NC}"
-  echo ""
-  echo "  Add to your ~/.bashrc:"
-  echo ""
-  echo "    source ~/.local/share/bash-completion/completions/claude-profile"
-  echo ""
-  echo "  Then: source ~/.bashrc"
+  rc="$HOME/.bashrc"
+  if ! grep -q "$COMPLETION_BEGIN" "$rc" 2>/dev/null; then
+    cat >> "$rc" << 'BASHEOF'
+
+# >>> claude-profile completions >>>
+source ~/.local/share/bash-completion/completions/claude-profile
+# <<< claude-profile completions <<<
+BASHEOF
+    ok "Added completion setup to ~/.bashrc"
+  fi
 fi
 
 echo ""

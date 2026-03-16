@@ -91,6 +91,50 @@ setup() {
   [[ "$output" == *"delete manually"* ]]
 }
 
+@test "removes completion setup from .zshrc" {
+  cat > "$HOME/.zshrc" << 'EOF'
+export PATH="/usr/bin:$PATH"
+# >>> claude-profile completions >>>
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
+# <<< claude-profile completions <<<
+export OTHER="keep"
+EOF
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q '# >>> claude-profile completions >>>' "$HOME/.zshrc"
+  ! grep -q 'zfunc' "$HOME/.zshrc"
+  # Preserved surrounding content
+  grep -q 'PATH="/usr/bin' "$HOME/.zshrc"
+  grep -q 'OTHER="keep"' "$HOME/.zshrc"
+  [[ "$output" == *"Removed completion setup from"* ]]
+}
+
+@test "removes completion setup from .bashrc" {
+  cat > "$HOME/.bashrc" << 'EOF'
+export PATH="/usr/bin:$PATH"
+# >>> claude-profile completions >>>
+source ~/.local/share/bash-completion/completions/claude-profile
+# <<< claude-profile completions <<<
+export OTHER="keep"
+EOF
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q '# >>> claude-profile completions >>>' "$HOME/.bashrc"
+  grep -q 'OTHER="keep"' "$HOME/.bashrc"
+}
+
+@test "uninstall is clean when no shell rc markers exist" {
+  echo 'export PATH="/usr/bin:$PATH"' > "$HOME/.zshrc"
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  # .zshrc untouched
+  grep -q 'PATH="/usr/bin' "$HOME/.zshrc"
+}
+
 @test "idempotent — running twice doesn't fail" {
   bash "$REPO_DIR/uninstall.sh" >/dev/null 2>&1
   run bash "$REPO_DIR/uninstall.sh"
