@@ -32,15 +32,26 @@ _git_commit() {
 # Resolve a ref (commit hash or date string) to a commit hash.
 _git_resolve_ref() {
   local dir="$1" ref="$2"
-  if git -C "$dir" rev-parse --verify "$ref" &>/dev/null; then
-    echo "$ref"
-  else
-    local resolved
-    resolved="$(git -C "$dir" log --format='%H' --before="$ref" -1 2>/dev/null || true)"
-    if [[ -z "$resolved" ]]; then
-      err "Could not resolve '$ref' as commit or date"
-      exit 1
-    fi
+  local resolved="" date_ref="$ref"
+
+  # Resolve commit-ish refs explicitly so date-like strings don't get
+  # misinterpreted by git's date parser.
+  if resolved="$(git -C "$dir" rev-parse --verify "${ref}^{commit}" 2>/dev/null)"; then
     echo "$resolved"
+    return 0
   fi
+
+  # Git's approxidate parser handles bare YYYY-MM-DD inconsistently for
+  # pre-epoch dates. Normalize calendar dates to end-of-day UTC first.
+  if [[ "$ref" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    date_ref="${ref}T23:59:59Z"
+  fi
+
+  resolved="$(git -C "$dir" rev-list -1 --before="$date_ref" HEAD 2>/dev/null || true)"
+  if [[ -z "$resolved" ]]; then
+    err "Could not resolve '$ref' as commit or date"
+    exit 1
+  fi
+
+  echo "$resolved"
 }

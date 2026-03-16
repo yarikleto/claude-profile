@@ -13,6 +13,9 @@ ok()    { echo -e "${GREEN}✓${NC} $*"; }
 err()   { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ZDOTDIR_PATH="${ZDOTDIR:-$HOME}"
+ZSH_COMPLETIONS_INSTALLED=""
+BASH_COMPLETIONS_INSTALLED=""
 
 if [[ ! -f "$SCRIPT_DIR/claude-profile" ]]; then
   err "Run install.sh from the cloned repo directory"
@@ -38,19 +41,69 @@ ok "Installed to $INSTALL_DIR/claude-profile"
 # ─── Install shell completions ──────────────────────────────
 COMPLETIONS_NEED_SETUP=""
 
+expand_home_path() {
+  local path="$1"
+  path="${path/#\~/$HOME}"
+  path="${path//\$\{HOME\}/$HOME}"
+  path="${path//\$HOME/$HOME}"
+  printf '%s\n' "$path"
+}
+
+detect_oh_my_zsh_custom_dir() {
+  local rc="$ZDOTDIR_PATH/.zshrc"
+  local custom_dir=""
+
+  if [[ -n "${ZSH_CUSTOM:-}" ]]; then
+    expand_home_path "$ZSH_CUSTOM"
+    return 0
+  fi
+
+  if [[ -f "$rc" ]]; then
+    custom_dir="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?ZSH_CUSTOM=//p' "$rc" | tail -n 1)"
+    custom_dir="${custom_dir%\"}"
+    custom_dir="${custom_dir#\"}"
+    custom_dir="${custom_dir%\'}"
+    custom_dir="${custom_dir#\'}"
+    if [[ -n "$custom_dir" ]]; then
+      expand_home_path "$custom_dir"
+      return 0
+    fi
+  fi
+
+  if [[ -d "$HOME/.oh-my-zsh" ]]; then
+    printf '%s\n' "$HOME/.oh-my-zsh/custom"
+  fi
+
+  return 0
+}
+
+clear_zsh_completion_cache() {
+  local dump_files=()
+  shopt -s nullglob
+  dump_files=("$ZDOTDIR_PATH"/.zcompdump*)
+  shopt -u nullglob
+
+  if (( ${#dump_files[@]} )); then
+    rm -f "${dump_files[@]}"
+    ok "Cleared zsh completion cache"
+  fi
+}
+
 install_zsh_completions() {
   local src="$1" filename="$2"
   local target="${COMPLETIONS_DIR:-}"
+  local omz_custom=""
 
   if [[ -z "$target" ]]; then
-    if [[ -d "$HOME/.oh-my-zsh/completions" ]]; then
-      # oh-my-zsh auto-loads this directory
-      target="$HOME/.oh-my-zsh/completions"
+    omz_custom="$(detect_oh_my_zsh_custom_dir)"
+    if [[ -n "$omz_custom" ]]; then
+      # oh-my-zsh auto-loads $ZSH_CUSTOM/completions via fpath
+      target="$omz_custom/completions"
     else
       # Use ~/.zfunc — conventional user completion dir for zsh
       target="$HOME/.zfunc"
       # Check if fpath already includes it (via .zshrc)
-      if ! grep -q '\.zfunc' "$HOME/.zshrc" 2>/dev/null; then
+      if ! grep -q '\.zfunc' "$ZDOTDIR_PATH/.zshrc" 2>/dev/null; then
         COMPLETIONS_NEED_SETUP="zsh"
       fi
     fi
@@ -59,6 +112,8 @@ install_zsh_completions() {
   mkdir -p "$target"
   if [[ -f "$src" ]]; then
     cp "$src" "$target/$filename"
+    ZSH_COMPLETIONS_INSTALLED=1
+    clear_zsh_completion_cache
     ok "zsh completions → $target/$filename"
   fi
 }
@@ -82,6 +137,7 @@ install_bash_completions() {
   mkdir -p "$target"
   if [[ -f "$src" ]]; then
     cp "$src" "$target/$filename"
+    BASH_COMPLETIONS_INSTALLED=1
     ok "bash completions → $target/$filename"
   fi
 }
@@ -125,7 +181,7 @@ COMPLETION_BEGIN="# >>> claude-profile completions >>>"
 COMPLETION_END="# <<< claude-profile completions <<<"
 
 if [[ "$COMPLETIONS_NEED_SETUP" == *"zsh"* ]]; then
-  rc="$HOME/.zshrc"
+  rc="$ZDOTDIR_PATH/.zshrc"
   if ! grep -q "$COMPLETION_BEGIN" "$rc" 2>/dev/null; then
     cat >> "$rc" << 'ZSHEOF'
 
@@ -153,6 +209,12 @@ fi
 
 echo ""
 ok "Installation complete!"
+if [[ -n "$ZSH_COMPLETIONS_INSTALLED" ]]; then
+  info "Open a new zsh session once to load completions immediately (for example: exec zsh)"
+fi
+if [[ -n "$BASH_COMPLETIONS_INSTALLED" ]]; then
+  info "Open a new bash session or source ~/.bashrc to load completions"
+fi
 echo ""
 echo -e "  ${BOLD}Quick start:${NC}"
 echo "    claude-profile fork default    # Save your current setup"

@@ -6,6 +6,7 @@ REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 setup() {
   # Isolated HOME
   export HOME="$BATS_TEST_TMPDIR/home"
+  export ZDOTDIR="$HOME"
   mkdir -p "$HOME"
 
   # Install to isolated location first
@@ -48,7 +49,16 @@ setup() {
   [ ! -f "$HOME/.zfunc/_claude-profile" ]
 }
 
-@test "removes completions from oh-my-zsh" {
+@test "removes completions from oh-my-zsh custom dir" {
+  mkdir -p "$HOME/.oh-my-zsh/custom/completions"
+  cp "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.oh-my-zsh/custom/completions/_claude-profile"
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.oh-my-zsh/custom/completions/_claude-profile" ]
+}
+
+@test "removes completions from legacy oh-my-zsh dir" {
   mkdir -p "$HOME/.oh-my-zsh/completions"
   cp "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.oh-my-zsh/completions/_claude-profile"
 
@@ -124,6 +134,17 @@ EOF
   [ "$status" -eq 0 ]
   ! grep -q '# >>> claude-profile completions >>>' "$HOME/.bashrc"
   grep -q 'OTHER="keep"' "$HOME/.bashrc"
+}
+
+@test "clears zcompdump cache" {
+  touch "$HOME/.zcompdump-test"
+  touch "$HOME/.zcompdump-test.zwc"
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/.zcompdump-test" ]
+  [ ! -e "$HOME/.zcompdump-test.zwc" ]
+  [[ "$output" == *"Cleared zsh completion cache"* ]]
 }
 
 @test "uninstall is clean when no shell rc markers exist" {

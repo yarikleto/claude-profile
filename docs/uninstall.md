@@ -47,9 +47,10 @@ bash uninstall.sh
 ```bash
 rm -f ~/.local/bin/claude-profile
 rm -rf ~/.local/bin/claude-profile-lib
-rm -f ~/.oh-my-zsh/completions/_claude-profile
+rm -f ~/.oh-my-zsh/custom/completions/_claude-profile
 rm -f ~/.local/share/zsh/site-functions/_claude-profile
 rm -f ~/.local/share/bash-completion/completions/claude-profile
+rm -f ~/.zcompdump*
 ```
 
 If you installed to a custom location:

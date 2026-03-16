@@ -66,6 +66,21 @@ load test_helper
   [ -f "$(profile_dir default)/settings.json" ]
 }
 
+@test "restore accepts bare YYYY-MM-DD date" {
+  run_cli_ok fork default
+  run_cli_ok use default
+
+  local dir="$(profile_dir default)"
+  local commit_date
+  commit_date="$(git -C "$dir" log --format='%cs' -1)"
+
+  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "Changed"
+
+  run_cli restore "$commit_date"
+  [ "$status" -eq 0 ]
+}
+
 @test "warns that bulk items are not affected by restore" {
   mkdir -p "$CLAUDE_CODE_HOME/projects/myproject"
   echo "data" > "$CLAUDE_CODE_HOME/projects/myproject/file.txt"

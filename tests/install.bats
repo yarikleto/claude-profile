@@ -6,6 +6,7 @@ REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 setup() {
   # Isolated HOME
   export HOME="$BATS_TEST_TMPDIR/home"
+  export ZDOTDIR="$HOME"
   mkdir -p "$HOME"
 
   # Install to isolated location
@@ -87,11 +88,11 @@ setup() {
 @test "zsh completions: installs to oh-my-zsh when available" {
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/zsh"
-  mkdir -p "$HOME/.oh-my-zsh/completions"
+  mkdir -p "$HOME/.oh-my-zsh"
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-  [ -f "$HOME/.oh-my-zsh/completions/_claude-profile" ]
+  [ -f "$HOME/.oh-my-zsh/custom/completions/_claude-profile" ]
   # Should NOT also install to ~/.zfunc
   [ ! -f "$HOME/.zfunc/_claude-profile" ]
 }
@@ -99,11 +100,38 @@ setup() {
 @test "zsh completions: oh-my-zsh file has correct content" {
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/zsh"
-  mkdir -p "$HOME/.oh-my-zsh/completions"
+  mkdir -p "$HOME/.oh-my-zsh"
 
   bash "$REPO_DIR/install.sh" >/dev/null 2>&1
   # Installed file should match the source
-  diff "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.oh-my-zsh/completions/_claude-profile"
+  diff "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.oh-my-zsh/custom/completions/_claude-profile"
+}
+
+@test "zsh completions: respects ZSH_CUSTOM from .zshrc" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  mkdir -p "$HOME/.oh-my-zsh"
+  cat > "$HOME/.zshrc" << 'EOF'
+ZSH_CUSTOM="$HOME/.config/omz-custom"
+EOF
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.config/omz-custom/completions/_claude-profile" ]
+}
+
+@test "zsh completions: clears zcompdump cache" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  mkdir -p "$HOME/.oh-my-zsh"
+  touch "$HOME/.zcompdump-test"
+  touch "$HOME/.zcompdump-test.zwc"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/.zcompdump-test" ]
+  [ ! -e "$HOME/.zcompdump-test.zwc" ]
+  [[ "$output" == *"Cleared zsh completion cache"* ]]
 }
 
 @test "zsh completions: falls back to ~/.zfunc without oh-my-zsh" {
