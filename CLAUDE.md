@@ -230,14 +230,24 @@ bats tests/ --tap       # TAP output for CI
 
 ## Releasing
 
-Version is defined in `lib/config.sh` as `VERSION="X.Y.Z"`. When creating a new release, **always keep the VERSION variable and git tag in sync**:
+Version is defined in `lib/config.sh` as `VERSION="X.Y.Z"`. When creating a new release, **always keep the VERSION variable, git tag, and Homebrew formula in sync**:
 
 1. Update `VERSION` in `lib/config.sh`
 2. Commit the change
-3. Tag with the matching version: `git tag v0.1.0`
+3. Tag with the matching version: `git tag vX.Y.Z`
 4. Push both: `git push origin main --tags`
+5. Get the new tarball SHA256:
+   ```bash
+   curl -sL https://github.com/yarikleto/claude-profile/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256
+   ```
+6. Update the Homebrew tap formula (`url` and `sha256`) in `yarikleto/homebrew-claude-profile`:
+   ```bash
+   cd "$(brew --repository)/Library/Taps/yarikleto/homebrew-claude-profile"
+   # Edit Formula/claude-profile.rb — update url and sha256
+   git add Formula/claude-profile.rb && git commit -m "Update to vX.Y.Z" && git push
+   ```
 
-Never create a git tag without updating `VERSION` first — `claude-profile version` must match the tag.
+Never create a git tag without updating `VERSION` first — `claude-profile version` must match the tag. See `docs/homebrew-tap-setup.md` for full details.
 
 ## Common pitfalls
 
