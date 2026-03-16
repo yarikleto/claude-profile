@@ -30,14 +30,40 @@ setup() {
   [ ! -d "$lib" ]
 }
 
-@test "removes completions" {
-  # Place a completion file where uninstall looks for it
+@test "removes completions from site-functions" {
   mkdir -p "$HOME/.local/share/zsh/site-functions"
   cp "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.local/share/zsh/site-functions/_claude-profile"
 
   run bash "$REPO_DIR/uninstall.sh"
   [ "$status" -eq 0 ]
   [ ! -f "$HOME/.local/share/zsh/site-functions/_claude-profile" ]
+}
+
+@test "removes completions from ~/.zfunc" {
+  mkdir -p "$HOME/.zfunc"
+  cp "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.zfunc/_claude-profile"
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.zfunc/_claude-profile" ]
+}
+
+@test "removes completions from oh-my-zsh" {
+  mkdir -p "$HOME/.oh-my-zsh/completions"
+  cp "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.oh-my-zsh/completions/_claude-profile"
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.oh-my-zsh/completions/_claude-profile" ]
+}
+
+@test "removes bash completions" {
+  mkdir -p "$HOME/.local/share/bash-completion/completions"
+  cp "$REPO_DIR/completions/claude-profile.bash" "$HOME/.local/share/bash-completion/completions/claude-profile"
+
+  run bash "$REPO_DIR/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.local/share/bash-completion/completions/claude-profile" ]
 }
 
 @test "preserves profiles directory" {

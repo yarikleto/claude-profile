@@ -24,6 +24,7 @@ fi
 # Remove completions
 for f in \
   "$HOME/.oh-my-zsh/completions/_claude-profile" \
+  "$HOME/.zfunc/_claude-profile" \
   "$HOME/.local/share/zsh/site-functions/_claude-profile" \
   "$HOME/.local/share/bash-completion/completions/claude-profile"; do
   if [[ -f "$f" ]]; then

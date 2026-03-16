@@ -25,7 +25,7 @@ _claude-profile() {
     local profiles_dir="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__"
     local -a profiles
     if [[ -d "$profiles_dir" ]]; then
-      profiles=("${(@f)$(find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)}")
+      profiles=("${(@f)$(find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -not -name '.*' -exec basename {} \;)}")
     fi
     _describe 'profile' profiles
   }

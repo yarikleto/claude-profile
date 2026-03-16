@@ -81,3 +81,71 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"Installation complete"* ]]
 }
+
+# ─── Zsh completion auto-detection ───────────────────────────
+
+@test "zsh completions: installs to oh-my-zsh when available" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  mkdir -p "$HOME/.oh-my-zsh/completions"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.oh-my-zsh/completions/_claude-profile" ]
+  # Should NOT also install to ~/.zfunc
+  [ ! -f "$HOME/.zfunc/_claude-profile" ]
+}
+
+@test "zsh completions: oh-my-zsh file has correct content" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  mkdir -p "$HOME/.oh-my-zsh/completions"
+
+  bash "$REPO_DIR/install.sh" >/dev/null 2>&1
+  # Installed file should match the source
+  diff "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.oh-my-zsh/completions/_claude-profile"
+}
+
+@test "zsh completions: falls back to ~/.zfunc without oh-my-zsh" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.zfunc/_claude-profile" ]
+  # Verify content matches source
+  diff "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.zfunc/_claude-profile"
+}
+
+@test "zsh completions: prints fpath instructions when .zshrc missing .zfunc" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  echo 'export PATH="/usr/bin:$PATH"' > "$HOME/.zshrc"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"fpath="* ]]
+  [[ "$output" == *".zfunc"* ]]
+  [[ "$output" == *"compinit"* ]]
+}
+
+@test "zsh completions: prints fpath instructions when no .zshrc exists" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  # No .zshrc at all
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Enable tab completions (zsh)"* ]]
+  [[ "$output" == *"fpath="* ]]
+}
+
+@test "zsh completions: no fpath instructions when .zshrc already has .zfunc" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/zsh"
+  echo 'fpath=(~/.zfunc $fpath)' > "$HOME/.zshrc"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Enable tab completions (zsh)"* ]]
+}

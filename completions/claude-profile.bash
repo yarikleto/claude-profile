@@ -14,7 +14,7 @@ _claude_profile_completions() {
   local profiles_dir="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__"
   local profiles=""
   if [[ -d "$profiles_dir" ]]; then
-    profiles="$(find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null)"
+    profiles="$(find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -not -name '.*' -exec basename {} \; 2>/dev/null)"
   fi
 
   case "${COMP_WORDS[1]}" in

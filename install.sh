@@ -36,39 +36,62 @@ rm -f "$INSTALL_DIR/claude-profile.bak"
 ok "Installed to $INSTALL_DIR/claude-profile"
 
 # ─── Install shell completions ──────────────────────────────
-install_completions() {
-  local shell_type="$1" src="$2" filename="$3"
+COMPLETIONS_NEED_SETUP=""
+
+install_zsh_completions() {
+  local src="$1" filename="$2"
   local target="${COMPLETIONS_DIR:-}"
 
   if [[ -z "$target" ]]; then
-    case "$shell_type" in
-      zsh)
-        if [[ -d "$HOME/.oh-my-zsh/completions" ]]; then
-          target="$HOME/.oh-my-zsh/completions"
-        else
-          target="$HOME/.local/share/zsh/site-functions"
-          mkdir -p "$target"
-        fi
-        ;;
-      bash)
-        target="$HOME/.local/share/bash-completion/completions"
-        mkdir -p "$target"
-        ;;
-    esac
+    if [[ -d "$HOME/.oh-my-zsh/completions" ]]; then
+      # oh-my-zsh auto-loads this directory
+      target="$HOME/.oh-my-zsh/completions"
+    else
+      # Use ~/.zfunc — conventional user completion dir for zsh
+      target="$HOME/.zfunc"
+      # Check if fpath already includes it (via .zshrc)
+      if ! grep -q '\.zfunc' "$HOME/.zshrc" 2>/dev/null; then
+        COMPLETIONS_NEED_SETUP="zsh"
+      fi
+    fi
   fi
 
-  if [[ -f "$src" && -n "$target" ]]; then
+  mkdir -p "$target"
+  if [[ -f "$src" ]]; then
     cp "$src" "$target/$filename"
-    ok "$shell_type completions → $target/$filename"
+    ok "zsh completions → $target/$filename"
+  fi
+}
+
+install_bash_completions() {
+  local src="$1" filename="$2"
+  local target="${COMPLETIONS_DIR:-}"
+
+  if [[ -z "$target" ]]; then
+    # Check if bash-completion v2 is available (supports user completions dir)
+    if [[ -d "$HOME/.local/share/bash-completion/completions" ]] || \
+       bash -c 'pkg-config --exists bash-completion 2>/dev/null' 2>/dev/null; then
+      target="$HOME/.local/share/bash-completion/completions"
+    else
+      # Fall back to same dir — will print setup instructions
+      target="$HOME/.local/share/bash-completion/completions"
+      COMPLETIONS_NEED_SETUP="${COMPLETIONS_NEED_SETUP:+$COMPLETIONS_NEED_SETUP+}bash"
+    fi
+  fi
+
+  mkdir -p "$target"
+  if [[ -f "$src" ]]; then
+    cp "$src" "$target/$filename"
+    ok "bash completions → $target/$filename"
   fi
 }
 
 current_shell="$(basename "${SHELL:-bash}")"
 case "$current_shell" in
-  zsh)  install_completions zsh "$SCRIPT_DIR/completions/claude-profile.zsh" "_claude-profile" ;;
-  bash) install_completions bash "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
-  *)    install_completions zsh "$SCRIPT_DIR/completions/claude-profile.zsh" "_claude-profile"
-        install_completions bash "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
+  zsh)  install_zsh_completions "$SCRIPT_DIR/completions/claude-profile.zsh" "_claude-profile" ;;
+  bash) install_bash_completions "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
+  *)    install_zsh_completions "$SCRIPT_DIR/completions/claude-profile.zsh" "_claude-profile"
+        install_bash_completions "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
 esac
 
 # ─── Create seed directory ──────────────────────────────────
@@ -95,6 +118,30 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
     *)    echo "  export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
   esac
   echo ""
+fi
+
+# ─── Completion setup instructions ───────────────────────────
+if [[ "$COMPLETIONS_NEED_SETUP" == *"zsh"* ]]; then
+  echo ""
+  echo -e "${BOLD}Enable tab completions (zsh):${NC}"
+  echo ""
+  echo "  Add to your ~/.zshrc (before compinit):"
+  echo ""
+  echo "    fpath=(~/.zfunc \$fpath)"
+  echo "    autoload -Uz compinit && compinit"
+  echo ""
+  echo "  Then: source ~/.zshrc"
+fi
+
+if [[ "$COMPLETIONS_NEED_SETUP" == *"bash"* ]]; then
+  echo ""
+  echo -e "${BOLD}Enable tab completions (bash):${NC}"
+  echo ""
+  echo "  Add to your ~/.bashrc:"
+  echo ""
+  echo "    source ~/.local/share/bash-completion/completions/claude-profile"
+  echo ""
+  echo "  Then: source ~/.bashrc"
 fi
 
 echo ""
