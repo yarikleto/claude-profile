@@ -202,6 +202,29 @@ EOF
   ! grep -q '# >>> claude-profile completions >>>' "$HOME/.zshrc"
 }
 
+# ─── Remote installer ────────────────────────────────────────
+
+@test "remote-install: clones to temp dir, installs, cleans up" {
+  run bash "$REPO_DIR/remote-install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile" ]
+  [ -x "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile" ]
+  [[ "$output" == *"Installation complete"* ]]
+}
+
+@test "remote-install: temp clone directory is cleaned up" {
+  # Count tmp dirs before
+  local tmp_before
+  tmp_before="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' -type d 2>/dev/null | wc -l | tr -d ' ')"
+
+  bash "$REPO_DIR/remote-install.sh" >/dev/null 2>&1
+
+  # Count tmp dirs after — should not have leftover clone dirs
+  local tmp_after
+  tmp_after="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' -type d 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$tmp_after" -le "$tmp_before" ]
+}
+
 @test "bash completions: auto-adds source line to .bashrc" {
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/bash"
