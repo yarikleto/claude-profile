@@ -38,7 +38,7 @@ brew install claude-profile
 ### One-liner
 
 ```bash
-git clone https://github.com/yarikleto/claude-profile.git && cd claude-profile && bash install.sh
+curl -fsSL https://raw.githubusercontent.com/yarikleto/claude-profile/main/remote-install.sh | bash
 ```
 
 Open a new shell once to load tab completion: `exec zsh` or `exec bash`.
