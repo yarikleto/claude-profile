@@ -71,28 +71,41 @@ load test_helper
   run_cli_ok use default
 
   local dir="$(profile_dir default)"
+  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "Changed"
+
+  # Make unsaved change so restore has visible effect
+  echo '{"unsaved": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
   local commit_date
   commit_date="$(git -C "$dir" log --format='%cs' -1)"
 
-  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
-  run_cli_ok save -m "Changed"
+  run_cli_ok restore "$commit_date"
 
-  run_cli restore "$commit_date"
-  [ "$status" -eq 0 ]
+  # Date resolves to end-of-day → matches "Changed" commit
+  # Live state should reflect "Changed", NOT the unsaved state
+  grep -q '"changed"' "$CLAUDE_CODE_HOME/settings.json"
+  ! grep -q '"unsaved"' "$CLAUDE_CODE_HOME/settings.json"
 }
 
-@test "warns that bulk items are not affected by restore" {
-  mkdir -p "$CLAUDE_CODE_HOME/projects/myproject"
-  echo "data" > "$CLAUDE_CODE_HOME/projects/myproject/file.txt"
+@test "restore removes files added after target commit" {
   run_cli_ok fork default
   run_cli_ok use default
+
   local dir="$(profile_dir default)"
   local initial
   initial="$(git -C "$dir" log --format='%h' -1)"
-  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
-  run_cli_ok save -m "Changed"
+
+  # Add a new file and save
+  mkdir -p "$CLAUDE_CODE_HOME/agents"
+  echo "extra agent" > "$CLAUDE_CODE_HOME/agents/extra.md"
+  run_cli_ok save -m "Added extra agent"
+
+  # Restore to initial commit — the extra file should be gone
   run_cli_ok restore "$initial"
-  [[ "$output" == *"bulk"* ]] || [[ "$output" == *"Bulk"* ]]
+
+  [ ! -f "$(profile_dir default)/agents/extra.md" ]
+  [ ! -f "$CLAUDE_CODE_HOME/agents/extra.md" ]
 }
 
 @test "requires a ref" {

@@ -405,6 +405,7 @@ JSON
 
 @test "use: symlink planted in profile dir does not overwrite live files" {
   run_cli_ok fork legit
+  run_cli_ok fork other
 
   local target_file="$BATS_TEST_TMPDIR/attacker-controlled"
   echo "attacker data" > "$target_file"
@@ -417,18 +418,20 @@ JSON
   local before
   before="$(cat "$CLAUDE_CODE_HOME/settings.json")"
 
-  run_cli_ok use legit
+  # Validation should reject the profile with a symlink
+  run_cli use legit
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Symlink"* ]]
 
-  # The symlink should be skipped — live settings.json should be removed
-  # (since the profile's settings.json was a symlink and was skipped)
-  # Importantly, attacker data should NOT be in live settings
+  # Live settings must not contain attacker data
   if [[ -f "$CLAUDE_CODE_HOME/settings.json" ]]; then
     ! grep -q "attacker data" "$CLAUDE_CODE_HOME/settings.json"
   fi
 }
 
-@test "use: symlinked directory in profile dir is safely ignored" {
+@test "use: symlinked directory in profile dir is rejected" {
   run_cli_ok fork safe-profile
+  run_cli_ok fork other
 
   local evil_dir="$BATS_TEST_TMPDIR/evil-agents"
   mkdir -p "$evil_dir"
@@ -438,7 +441,10 @@ JSON
   rm -rf "$(profile_dir safe-profile)/agents"
   ln -s "$evil_dir" "$(profile_dir safe-profile)/agents"
 
-  run_cli_ok use safe-profile
+  # Validation should reject the profile with a symlink
+  run_cli use safe-profile
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Symlink"* ]]
 
   # The evil content should not appear in live agents
   if [[ -d "$CLAUDE_CODE_HOME/agents" ]]; then

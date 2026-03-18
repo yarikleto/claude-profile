@@ -9,11 +9,12 @@ Development guide for `claude-profile` — a bash CLI tool for switching between
 ### Rules — no exceptions
 
 1. **NEVER run `claude-profile` commands against the real `$HOME`** — not for testing, not for demos, not for "quick checks". Always use an isolated environment.
-2. **NEVER run `rm -rf` on `~/.claude/__profiles__`** or any real user path during development.
+2. **NEVER run `rm -rf` on `~/.local/share/claude-profile`** or any real user path during development.
 3. **ALL testing happens in bats** (which isolates `$HOME` automatically) or in a manually isolated env:
    ```bash
    export HOME=$(mktemp -d)
    export CLAUDE_CODE_HOME="$HOME/.claude"
+   export CLAUDE_PROFILE_HOME="$HOME/.local/share/claude-profile"
    mkdir -p "$CLAUDE_CODE_HOME"
    git config --global user.name test && git config --global user.email test@test
    # NOW you can safely run claude-profile commands
@@ -29,10 +30,10 @@ During early development, manual testing in the real `$HOME` destroyed a user's 
 ```
 claude-profile              # Entrypoint: source modules + dispatch commands
 lib/
-  config.sh                 # Constants, managed items, _item_source/_item_name
+  config.sh                 # Constants, XDG path resolution, seed defaults
   output.sh                 # Colors, info/ok/warn/err helpers
   state.sh                  # get_current, set_current, backup, validation helpers
-  files.sh                  # Copy operations between profiles and live paths
+  files.sh                  # Full-directory operations between profiles and live paths
   git.sh                    # Git history: init, commit, resolve ref
 commands/
   profile.sh                # new, fork, use, save, deactivate
@@ -51,43 +52,30 @@ completions/
 ### Key principles
 
 - **One file = one responsibility**. Commands are in `commands/`, shared logic in `lib/`.
-- **All file operations go through `lib/files.sh`**. Never copy/remove managed items directly in command files — use `_snapshot_current`, `_save_current_to`, `_load_profile_to_live`, `_restore_from_backup`, `_seed_profile`.
+- **All file operations go through `lib/files.sh`**. Never copy/remove files directly in command files — use `_snapshot_current`, `_save_current_to`, `_load_profile_to_live`, `_restore_from_backup`, `_seed_profile`.
 - **All git operations go through `lib/git.sh`**. Never call `git` directly in command files — use `_git_init`, `_git_commit`, `_git_resolve_ref`.
-- **Profiles are independent copies, not symlinks**. Switching copies files in/out of `~/.claude/`.
+- **Profiles are independent copies, not symlinks**. Switching copies/moves the entire `~/.claude/` directory.
 - **The original backup (`.pre-profiles-backup/`) is never modified** after creation. It's the safety net.
-- **Items outside `~/.claude/`** (like `~/.claude.json`) use the `name:path` format in `MANAGED_ITEMS`. Use `_item_source` for the live path and `_item_name` for the name inside profile directories.
-- **Everything lives in `~/.claude/__profiles__/`** — profiles, backup, seed, statusline script. The `__profiles__` name avoids conflicts with future native Claude Code profiles.
+- **Profiles are stored in XDG-compliant location** (`~/.local/share/claude-profile/`), separate from `~/.claude/`.
+- **`~/.claude.json`** lives in `$HOME`, not inside `~/.claude/`. It is stored as `.claude.json` inside profile directories.
 
-### Two types of managed items
+### Full-directory snapshots
 
-1. **Tracked items** (`MANAGED_ITEMS`) — small config files (settings.json, CLAUDE.md, etc.). Copied on switch, tracked by git in each profile.
-2. **Bulk items** (`BULK_ITEMS`) — large data dirs (projects/, agent-memory/, todos/, plans/, tasks/, plugins/, history.jsonl). **Moved** (not copied) on switch for speed, **copied** on fork/save. Excluded from git via `.gitignore`.
+Profiles snapshot the **entire** `~/.claude/` directory plus `~/.claude.json`. There is no item-level tracking — every file in `~/.claude/` is captured. A static `.gitignore` excludes large data dirs from git tracking.
 
-During `use` (switch), pass `--move-bulk` to `_save_current_to` and `_load_profile_to_live`. During `save`/`fork`, don't — let them copy.
+During `use` (switch), pass `--move` to `_save_current_to` and `_load_profile_to_live` for speed. During `save`/`fork`, don't — let them copy.
+
+### Storage location resolution
+
+Priority: `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME/claude-profile` > `$HOME/.local/share/claude-profile`
 
 ### Seed templates
 
-`new` creates profiles seeded from `__profiles__/.seed/` (user-editable). Falls back to built-in defaults in `SEED_NAMES`/`SEED_CONTENTS` (config.sh) if `.seed/` doesn't exist. `install.sh` creates `.seed/` with defaults.
+`new` creates profiles seeded from `.seed/` (user-editable). Falls back to built-in defaults in `SEED_NAMES`/`SEED_CONTENTS` (config.sh) if `.seed/` doesn't exist. `install.sh` creates `.seed/` with defaults.
 
 ### deactivate --keep
 
 `deactivate --keep` detaches from profiles without restoring the backup — the user's current config stays as-is. This is the migration path for when native profiles arrive. Regular `deactivate` restores from `.pre-profiles-backup/`.
-
-### Path resolution
-
-Most managed items live in `~/.claude/<name>`. Items with custom paths use `name:path` format:
-
-```bash
-# In MANAGED_ITEMS array:
-"settings.json"                      # → ~/.claude/settings.json
-".claude.json:$HOME/.claude.json"    # → ~/.claude.json (in $HOME, not in ~/.claude/)
-```
-
-Always use these helpers, never hardcode paths:
-- `_item_source "$item"` — resolves to the live filesystem path
-- `_item_name "$item"` — resolves to the storage name inside profile directories
-
-**Use `iname` (not `name`) for loop variables** to avoid shadowing function parameters.
 
 ## Development workflow — TDD
 
@@ -159,6 +147,7 @@ Tests use [bats-core](https://github.com/bats-core/bats-core). Each test gets a 
 **The isolated environment provides:**
 - `$HOME` → `/tmp/.../home/` (unique per test, auto-cleaned)
 - `$CLAUDE_CODE_HOME` → `$HOME/.claude/`
+- `$CLAUDE_PROFILE_HOME` → `$HOME/.local/share/claude-profile/`
 - `~/.claude/settings.json` with realistic content
 - `~/.claude/skills/my-skill/SKILL.md`
 - `~/.claude/agents/` (empty directory)
@@ -251,8 +240,6 @@ Never create a git tag without updating `VERSION` first — `claude-profile vers
 
 ## Common pitfalls
 
-- **Variable shadowing**: Use `iname` (not `name`) for managed item names in loops — `name` is often the profile name in the outer function scope.
 - **`set -euo pipefail`**: Don't use `[[ cond ]] && action` — if the condition is false, the script exits. Use `if/then/fi`.
 - **Git in tests**: The isolated `$HOME` has no git config by default — `test_helper.bash` sets `user.name` and `user.email`. If you add new test files, always `load test_helper`.
-- **`mapfile`**: Used in `_load_managed_items`. Requires bash 4+. macOS ships bash 3 but `#!/usr/bin/env bash` picks up Homebrew's bash 5 if installed.
 - **Testing against real `$HOME`**: NEVER. See the top of this file. Use bats or the isolated env pattern. There is no exception to this rule.

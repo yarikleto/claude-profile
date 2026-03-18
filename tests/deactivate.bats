@@ -26,7 +26,7 @@ load test_helper
   run_cli_ok use default
   run_cli_ok deactivate
 
-  [ ! -f "$CLAUDE_CODE_HOME/__profiles__/.current" ]
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
 }
 
 @test "deactivate: errors if backup directory is missing instead of destroying files" {
@@ -58,6 +58,21 @@ load test_helper
   grep -q '"mcpServers"' "$HOME/.claude.json"
 }
 
+@test "deactivate: clears .claude.json when original backup had none" {
+  # Remove the MCP config that test_helper sets up — simulate original state with no .claude.json
+  rm -f "$HOME/.claude.json"
+
+  run_cli_ok fork default
+  # Now add an MCP config while profile is active
+  echo '{"mcpServers": {"new": {"type": "http"}}}' > "$HOME/.claude.json"
+  run_cli_ok save
+
+  run_cli_ok deactivate
+
+  # Original state had no .claude.json — it should be gone after restore
+  [ ! -f "$HOME/.claude.json" ]
+}
+
 @test "--keep: keeps current config instead of restoring backup" {
   run_cli_ok fork default
   run_cli_ok use default
@@ -68,7 +83,7 @@ load test_helper
   grep -q '"custom"' "$CLAUDE_CODE_HOME/settings.json"
   ! grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
   # Profile marker should be cleared
-  [ ! -f "$CLAUDE_CODE_HOME/__profiles__/.current" ]
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
 }
 
 @test "--keep: bulk items in both live AND profile after detach" {

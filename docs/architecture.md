@@ -2,7 +2,7 @@
 
 ## Overview
 
-`claude-profile` is a bash CLI tool that switches between independent copies of Claude Code's configuration. It works by copying files in and out of `~/.claude/` — no symlinks, no daemons, no background processes.
+`claude-profile` is a bash CLI tool that switches between independent copies of Claude Code's configuration. It works by copying the entire `~/.claude/` directory in and out of profile directories — no symlinks, no daemons, no background processes.
 
 ```
 User runs            claude-profile use review
@@ -10,13 +10,13 @@ User runs            claude-profile use review
                             ▼
                 ┌───────────────────────┐
                 │  Save current profile │  ← auto-save before switch
-                │  (tracked: cp, bulk: mv)
+                │  (full directory)     │
                 └───────────┬───────────┘
                             │
                             ▼
                 ┌───────────────────────┐
                 │  Load new profile     │  ← restore from profile dir
-                │  (tracked: cp, bulk: mv)
+                │  (full directory)     │
                 └───────────┬───────────┘
                             │
                             ▼
@@ -30,7 +30,7 @@ User runs            claude-profile use review
 ```
 claude-profile              # Entrypoint: sources modules, dispatches commands
 lib/
-  config.sh                 # Constants, MANAGED_ITEMS, BULK_ITEMS, SEED defaults
+  config.sh                 # Constants, XDG path resolution, SEED defaults
   output.sh                 # Colors, info/ok/warn/err helpers
   state.sh                  # get_current, set_current, backup, validation, seed
   files.sh                  # All file operations between profiles and live paths
@@ -52,103 +52,59 @@ uninstall.sh                # Remove binary, modules, completions
 
 ## Disk layout
 
-Everything the tool creates lives inside `~/.claude/__profiles__/`. The name uses double underscores to avoid conflicts with a future native profiles feature in Claude Code.
+Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 
 ```
-~/.claude/                          ← "live" location, what Claude Code reads
-├── settings.json                   ← copied from active profile
-├── CLAUDE.md                       ← copied from active profile
-├── agents/                         ← copied from active profile
-├── projects/                       ← moved from active profile
-├── plugins/                        ← moved from active profile
-├── history.jsonl                   ← moved from active profile
-└── __profiles__/                   ← everything claude-profile owns
-    ├── .current                    # one line: name of active profile
-    ├── .seed/                      # templates for `new` (user-editable)
-    │   ├── settings.json           #   minimal settings with statusline
-    │   └── .claude.json            #   empty {}
-    ├── .managed                    # custom managed items (optional)
-    ├── .pre-profiles-backup/       # original state, NEVER modified
-    │   ├── settings.json
-    │   ├── CLAUDE.md
-    │   ├── projects/
-    │   └── ...
-    ├── statusline.sh               # statusline script for Claude Code
-    ├── default/                    # a profile
-    │   ├── .git/                   #   version history (tracked items only)
-    │   ├── .gitignore              #   excludes bulk items
-    │   ├── settings.json           #   tracked: copied on switch
-    │   ├── CLAUDE.md
-    │   ├── agents/
-    │   ├── projects/               #   bulk: moved on switch
-    │   ├── plugins/
-    │   ├── history.jsonl
-    │   └── ...
-    └── code-review/                # another profile
-        └── ...
+~/.claude/                                  ← "live" location, what Claude Code reads
+├── settings.json                           ← from active profile
+├── CLAUDE.md                               ← from active profile
+├── agents/                                 ← from active profile
+├── projects/                               ← from active profile
+├── plugins/                                ← from active profile
+├── history.jsonl                           ← from active profile
+└── ...
+
+~/.local/share/claude-profile/              ← everything claude-profile owns
+├── .current                                # one line: name of active profile
+├── .seed/                                  # templates for `new` (user-editable)
+│   ├── settings.json
+│   └── .claude.json
+├── .pre-profiles-backup/                   # original state, NEVER modified
+│   ├── settings.json
+│   ├── CLAUDE.md
+│   ├── projects/
+│   └── ...
+├── statusline.sh                           # statusline script for Claude Code
+├── default/                                # a profile
+│   ├── .git/                               #   version history
+│   ├── .gitignore                          #   excludes large data dirs
+│   ├── settings.json
+│   ├── CLAUDE.md
+│   ├── agents/
+│   ├── projects/
+│   ├── plugins/
+│   ├── history.jsonl
+│   ├── .claude.json                        #   stored copy of ~/.claude.json
+│   └── ...
+└── code-review/                            # another profile
+    └── ...
 ```
 
-## Two types of managed items
+### Storage location resolution
 
-The tool distinguishes between small config files and large data directories:
+Priority: `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME/claude-profile` > `$HOME/.local/share/claude-profile`
 
-### Tracked items (`MANAGED_ITEMS`)
+The `~/.claude.json` file (MCP server config) lives in `$HOME`, not inside `~/.claude/`. It is stored as `.claude.json` inside each profile directory and copied to/from `$HOME/.claude.json` on switch.
 
-Small configuration files. Defined in `lib/config.sh`.
+## Full-directory snapshots
 
-| Item | Live path | Notes |
-|------|-----------|-------|
-| `settings.json` | `~/.claude/settings.json` | |
-| `CLAUDE.md` | `~/.claude/CLAUDE.md` | |
-| `agents/` | `~/.claude/agents/` | |
-| `skills/` | `~/.claude/skills/` | |
-| `rules/` | `~/.claude/rules/` | |
-| `keybindings.json` | `~/.claude/keybindings.json` | |
-| `.claude.json` | `~/.claude.json` | Uses `name:path` format (lives outside `~/.claude/`) |
+Profiles snapshot the **entire** `~/.claude/` directory. There is no distinction between "managed items" and "bulk items" — everything is captured. A static `.gitignore` excludes large data dirs from git tracking while still copying/moving them.
 
-Behavior:
-- **Copied** (`cp`) on every operation (switch, fork, save)
-- **Tracked by git** — each profile has its own `.git/` with commit history
-- Users can override the list via `__profiles__/.managed`
+Git-tracked (small config):
+- Everything not in `.gitignore`
 
-### Bulk items (`BULK_ITEMS`)
-
-Large data directories and files. Defined in `lib/config.sh`.
-
-| Item | Live path |
-|------|-----------|
-| `projects/` | `~/.claude/projects/` |
-| `agent-memory/` | `~/.claude/agent-memory/` |
-| `todos/` | `~/.claude/todos/` |
-| `plans/` | `~/.claude/plans/` |
-| `tasks/` | `~/.claude/tasks/` |
-| `plugins/` | `~/.claude/plugins/` |
-| `history.jsonl` | `~/.claude/history.jsonl` |
-
-Behavior:
-- **Moved** (`mv`) during switch — instant even for hundreds of MB
-- **Copied** (`cp`) during fork and explicit save — preserves live data
-- **Not tracked by git** — excluded via `.gitignore` in each profile
-- Not user-configurable (hardcoded in `_DEFAULT_BULK_ITEMS`)
-
-### What is NOT managed
-
-These are infrastructure/cache files that are shared across all profiles:
-
-| Path | Why not managed |
-|------|-----------------|
-| `cache/` | Transient cache |
-| `debug/` | Debug logs |
-| `downloads/` | Downloads |
-| `file-history/` | File edit tracking |
-| `ide/` | IDE integration state |
-| `image-cache/`, `paste-cache/` | Caches |
-| `session-env/`, `sessions/` | Ephemeral session state |
-| `shell-snapshots/` | Shell state |
-| `stats-cache.json`, `statsig/` | Stats and feature flags |
-| `telemetry/` | Telemetry |
-| `backups/` | Claude Code's own backups |
-| `policy-limits.json` | Rate limits |
+Git-ignored (large data, still copied/moved):
+- `projects/`, `agent-memory/`, `todos/`, `plans/`, `tasks/`, `plugins/`, `history.jsonl`
 
 ## Command flows
 
@@ -158,10 +114,10 @@ Creates a new profile from the current live state.
 
 ```
 1. _ensure_original_backup()     ← one-time backup + seed creation
-2. Auto-save current profile     ← if one is active (cp tracked, cp bulk)
+2. Auto-save current profile     ← if one is active (cp)
 3. mkdir profile dir
-4. _snapshot_current()           ← cp all tracked + bulk from live to profile
-5. _git_init()                   ← init git, create .gitignore for bulk items
+4. _snapshot_current()           ← cp entire ~/.claude/ + ~/.claude.json to profile
+5. _git_init()                   ← init git with static .gitignore
 6. set_current()
 ```
 
@@ -171,38 +127,39 @@ Creates a clean empty profile.
 
 ```
 1. _ensure_original_backup()
-2. Auto-save current profile     ← --move-bulk (since we're switching away)
+2. Auto-save current profile     ← --move (since we're switching away)
 3. mkdir profile dir
 4. _seed_profile()               ← copy from .seed/ or built-in defaults
 5. _git_init()
-6. _load_profile_to_live()       ← --move-bulk (empty profile, nothing to move)
+6. _load_profile_to_live()       ← cp from profile to live
 7. set_current()
 ```
 
 ### `use <name>` (switch)
 
-The core operation. Uses `mv` for bulk items for speed.
+The core operation. Uses `--move` for speed.
 
 ```
-1. _save_current_to(current, --move-bulk)
-   ├── cp tracked items: live → current profile dir
-   ├── mv bulk items: live → current profile dir      ← instant
-   └── git commit tracked changes
-2. _load_profile_to_live(new, --move-bulk)
-   ├── rm live tracked items
-   ├── cp tracked items: new profile dir → live
-   ├── mv bulk items: new profile dir → live           ← instant
-3. set_current(new)
+1. _validate_profile_for_load(target)   ← pre-check before destructive ops
+2. _save_current_to(current, --move)
+   ├── mv all items: ~/.claude/ → current profile dir
+   ├── cp ~/.claude.json → current profile dir
+   └── git commit
+3. _load_profile_to_live(new, --move)
+   ├── clear ~/.claude/
+   ├── mv items: new profile dir → ~/.claude/
+   ├── cp .claude.json → ~/.claude.json
+4. set_current(new)
 ```
 
 ### `save [-m msg]`
 
-Explicit save. Uses `cp` for bulk (user continues working).
+Explicit save. Uses `cp` (user continues working).
 
 ```
 1. _save_current_to(current)
-   ├── cp tracked items: live → profile dir
-   ├── cp bulk items: live → profile dir
+   ├── cp all items: ~/.claude/ → profile dir
+   ├── cp ~/.claude.json → profile dir
    └── git commit
 ```
 
@@ -211,9 +168,10 @@ Explicit save. Uses `cp` for bulk (user continues working).
 Restores original state from backup.
 
 ```
-1. _save_current_to(current, --move-bulk)    ← save profile one last time
-2. _restore_from_backup()                     ← cp from .pre-profiles-backup to live
-3. clear_current()
+1. Verify backup exists
+2. _save_current_to(current, --move)    ← save profile one last time
+3. _restore_from_backup()               ← cp from .pre-profiles-backup to live
+4. clear_current()
 ```
 
 ### `deactivate --keep`
@@ -221,38 +179,36 @@ Restores original state from backup.
 Detaches without restoring backup. Migration path for native profiles.
 
 ```
-1. _save_current_to(current, --move-bulk)    ← save + move bulk to profile dir
-2. _load_bulk_from_profile(current)          ← mv bulk back to live
-3. clear_current()
+1. _save_current_to(current)    ← save (cp) to profile dir
+2. clear_current()
 ```
 
-After this: tracked items are live (untouched), bulk items are live (moved back), `.current` is gone. Claude Code sees normal config.
+After this: live files are untouched, `.current` is gone. Claude Code sees normal config.
 
 ## Key modules
 
 ### `lib/config.sh`
 
-Defines all constants and arrays:
+Defines constants and path resolution:
 
-- `PROFILES_DIR` — `~/.claude/__profiles__`
-- `MANAGED_ITEMS` — tracked config files (loaded from `.managed` or defaults)
-- `BULK_ITEMS` — large data dirs (hardcoded)
+- `PROFILES_DIR` — resolved via `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME` > default
+- `CLAUDE_DIR` — `${CLAUDE_CODE_HOME:-$HOME/.claude}`
 - `SEED_NAMES` / `SEED_CONTENTS` — fallback seed templates
-- `_item_source()` / `_item_name()` — resolve `name:path` format
+- `GITIGNORE_CONTENT` — static gitignore for large data dirs
 
 ### `lib/files.sh`
 
 All file operations. **Commands never copy/move files directly.**
 
-| Function | Used by | Tracked | Bulk |
-|----------|---------|---------|------|
-| `_seed_profile` | `new` | n/a | n/a |
-| `_snapshot_current` | `fork` | cp | cp |
-| `_save_current_to` | `use`, `save`, `deactivate` | cp + git | cp or mv |
-| `_load_profile_to_live` | `use`, `new` | cp | cp or mv |
-| `_load_bulk_from_profile` | `deactivate --keep` | n/a | mv |
-| `_restore_from_backup` | `deactivate` | cp | cp |
-| `_show_summary` | `fork`, `use` | display | display |
+| Function | Used by | Behavior |
+|----------|---------|----------|
+| `_seed_profile` | `new` | Copy .seed/ or defaults to profile |
+| `_snapshot_current` | `fork`, backup | cp ~/.claude/ + ~/.claude.json to dst |
+| `_save_current_to` | `use`, `save`, `deactivate` | cp/mv ~/.claude/ to dst + git commit |
+| `_validate_profile_for_load` | `use` | Pre-check safety before destructive ops |
+| `_load_profile_to_live` | `use`, `new`, `restore` | cp/mv profile to ~/.claude/ |
+| `_restore_from_backup` | `deactivate` | Load from .pre-profiles-backup |
+| `_show_summary` | `fork`, `use` | Display profile contents |
 
 ### `lib/state.sh`
 
@@ -266,7 +222,7 @@ Profile state management:
 
 Git operations for version history:
 
-- `_git_init` — init repo, create `.gitignore` (excludes bulk items), initial commit
+- `_git_init` — init repo, write static `.gitignore`, initial commit
 - `_git_commit` — stage all + commit (no-op if nothing changed)
 - `_git_resolve_ref` — resolve commit hash or date string to a commit
 
@@ -281,29 +237,28 @@ Core operations: `new`, `fork`, `use`, `save`, `deactivate`. All follow the same
 
 ### `commands/ui.sh`
 
-Statusline integration. Creates `__profiles__/statusline.sh` which reads JSON from stdin (Claude Code provides session data) and outputs model name + active profile.
+Statusline integration. Creates `statusline.sh` which reads JSON from stdin (Claude Code provides session data) and outputs model name + active profile. Uses the same 3-tier path resolution to find `.current`.
 
 ## Safety design
 
 ### Original backup
 
-Created once by `_backup_raw_state()` on first `fork` or `new`. Never modified after creation. Contains both tracked and bulk items. This is the "factory reset" — `deactivate` restores from here.
+Created once by `_backup_raw_state()` on first `fork` or `new`. Never modified after creation. Contains the full snapshot of `~/.claude/` + `~/.claude.json`. This is the "factory reset" — `deactivate` restores from here.
 
 ### Auto-save before switch
 
 Every operation that changes the active profile (`use`, `new`, `deactivate`) saves the current profile first. The user never loses unsaved changes.
 
+### Pre-validation before destructive switch
+
+`cmd_use` calls `_validate_profile_for_load` BEFORE saving the current profile. This ensures that if the target profile has issues (unreadable dirs, symlinks), the switch is aborted before any files are moved.
+
 ### Symlink protection
 
 - `_load_profile_to_live` skips symlinks in profile dirs (`! -L` check)
+- `_validate_profile_for_load` rejects nested symlinks inside directories
 - `_snapshot_current` follows symlinks at the source (user's live files are trusted) via `cp -RH`
 - Profile name validation rejects `..`, `/`, leading `.` or `-`
-
-### Path validation
-
-- Profile names are validated against path traversal (`../`, `/`, leading dots)
-- Custom `.managed` entries are validated to be under `$HOME`
-- Items with `..` in the path are rejected
 
 ## Testing
 
@@ -313,7 +268,7 @@ Test files map to source structure:
 
 | Test file | Tests for |
 |-----------|-----------|
-| `bulk.bats` | Bulk item isolation (projects, plugins, history, etc.) |
+| `bulk.bats` | Large data dir isolation (projects, plugins, history, etc.) |
 | `fork.bats` | `fork` command |
 | `new.bats` | `new` command + seed templates |
 | `use.bats` | `use` (switch) command |
@@ -321,7 +276,8 @@ Test files map to source structure:
 | `deactivate.bats` | `deactivate` + `--keep` |
 | `history.bats` | `history`, `diff`, `restore` |
 | `isolation.bats` | Cross-cutting isolation guarantees |
-| `security.bats` | Path traversal, symlink attacks, `.managed` validation |
+| `security.bats` | Path traversal, symlink attacks |
+| `data_safety.bats` | Data integrity through operations |
 | `install.bats` | `install.sh` |
 | `uninstall.bats` | `uninstall.sh` |
 

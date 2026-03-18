@@ -94,11 +94,18 @@ setup_bulk_data() {
   run_cli_ok fork alpha
   run_cli_ok fork beta
 
-  # After switching to alpha, beta's profile dir should NOT have bulk items
-  # (they were moved to live)
   run_cli_ok use alpha
-  # alpha's bulk is now live, alpha profile dir may not have bulk (moved to live)
-  # beta's bulk should be in beta's profile dir (saved before switch)
+
+  # After move-load: alpha's profile dir should NOT have files
+  # (they were moved to live by _load_profile_to_live --move)
+  [ ! -f "$(profile_dir alpha)/projects/my-project/session.jsonl" ]
+  [ ! -f "$(profile_dir alpha)/settings.json" ]
+
+  # Files SHOULD be in the live location
+  [ -f "$CLAUDE_CODE_HOME/projects/my-project/session.jsonl" ]
+  [ -f "$CLAUDE_CODE_HOME/settings.json" ]
+
+  # After move-save: beta's profile dir has files
   [ -f "$(profile_dir beta)/projects/my-project/session.jsonl" ]
 }
 

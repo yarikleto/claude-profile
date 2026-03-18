@@ -41,14 +41,22 @@ cmd_diff() {
 
 _snapshot_live_for_diff() {
   local dst="$1"
-  for item in "${MANAGED_ITEMS[@]}"; do
-    local src iname
-    src="$(_item_source "$item")"
-    iname="$(_item_name "$item")"
-    if [[ -e "$src" ]]; then
-      cp -RH "$src" "$dst/$iname" || return 1
+  # Copy all CLAUDE_DIR contents
+  local f
+  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
+    local base
+    base="$(basename "$f")"
+    if [[ "$base" == "." || "$base" == ".." ]]; then
+      continue
+    fi
+    if [[ -e "$f" ]]; then
+      cp -RH "$f" "$dst/$base" || return 1
     fi
   done
+  # Special: copy ~/.claude.json
+  if [[ -e "$HOME/.claude.json" ]]; then
+    cp -RH "$HOME/.claude.json" "$dst/.claude.json" || return 1
+  fi
 }
 
 _diff_unsaved() {
@@ -65,9 +73,6 @@ _diff_unsaved() {
 
   local diff_args
   diff_args=(-rq "$profile_dir" "$tmp" --exclude=.git --exclude=.gitignore)
-  for item in "${BULK_ITEMS[@]}"; do
-    diff_args+=("--exclude=$(_item_name "$item")")
-  done
 
   local changes diff_status=0
   if ! changes="$(diff "${diff_args[@]}" 2>/dev/null \
@@ -131,7 +136,13 @@ cmd_restore() {
     _save_current_to "$profile_dir" "Auto-save before restore to $ref"
   fi
 
-  # Restore files from git — checkout overwrites in-place (no pre-delete needed)
+  # Full rollback: remove tracked files that don't exist in the target commit,
+  # then restore the target's files. Plain `git checkout <ref> -- .` only
+  # updates paths present in the target — it won't delete files added later.
+  if ! git -C "$profile_dir" rm -rf --quiet . 2>/dev/null; then
+    err "Failed to clean working tree for $ref — profile unchanged"
+    exit 1
+  fi
   if ! git -C "$profile_dir" checkout "$resolved" -- . 2>/dev/null; then
     err "Failed to checkout $ref — profile unchanged"
     exit 1
@@ -145,5 +156,4 @@ cmd_restore() {
   fi
 
   ok "Restored $(_pname "$name") to ${YELLOW}$ref${NC}"
-  info "Note: bulk items (projects/, todos/, etc.) are not affected by restore"
 }

@@ -13,6 +13,7 @@ setup() {
   # Isolated home per test
   export HOME="$BATS_TEST_TMPDIR/home"
   export CLAUDE_CODE_HOME="$HOME/.claude"
+  export CLAUDE_PROFILE_HOME="$HOME/.local/share/claude-profile"
   mkdir -p "$CLAUDE_CODE_HOME"
 
   # Git identity (required for commits in isolated HOME)
@@ -65,10 +66,10 @@ run_cli_ok() {
 
 # Get profile directory path
 profile_dir() {
-  echo "$CLAUDE_CODE_HOME/__profiles__/$1"
+  echo "$CLAUDE_PROFILE_HOME/$1"
 }
 
 # Get backup directory path
 backup_dir() {
-  echo "$CLAUDE_CODE_HOME/__profiles__/.pre-profiles-backup"
+  echo "$CLAUDE_PROFILE_HOME/.pre-profiles-backup"
 }

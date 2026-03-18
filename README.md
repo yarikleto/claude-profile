@@ -74,19 +74,9 @@ That's it. Your original config is automatically backed up and can be restored a
 
 ## What gets switched
 
-Each profile fully isolates your Claude Code environment — not just settings, but also **memory, conversations, plugins, and history**. Switching profiles means a completely different Claude "brain".
+Each profile snapshots the **entire** `~/.claude/` directory plus `~/.claude.json`. Switching profiles means a completely different Claude "brain" — settings, memory, conversations, plugins, history, everything.
 
-| Config files | Data directories (moved instantly) |
-|---|---|
-| `settings.json` — model, permissions, hooks | `projects/` — per-project memory & conversations |
-| `CLAUDE.md` — personal instructions | `agent-memory/` — agent memory |
-| `agents/` — custom subagents | `todos/` — task lists |
-| `skills/` — slash commands | `plans/` — plans |
-| `rules/` — topic-specific rules | `tasks/` — task data |
-| `keybindings.json` — keyboard shortcuts | `plugins/` — installed plugins |
-| `~/.claude.json` — MCP servers | `history.jsonl` — conversation history |
-
-Config files are copied on switch. Data directories are **moved** (instant, even for large `projects/`).
+Profiles are stored in `~/.local/share/claude-profile/` (XDG-compliant), separate from `~/.claude/`.
 
 ## Commands
 
@@ -140,7 +130,7 @@ This is configured during installation. If you already have a custom `statusLine
 - **Full isolation** — each profile is an independent copy. Changing one never affects another.
 - **Clean exit** — `deactivate` restores your original state. `deactivate --keep` keeps your current config for [migration](#migrating-to-native-claude-code-profiles).
 
-> **Your original backup is always safe.** It lives at `~/.claude/__profiles__/.pre-profiles-backup/` and is never modified — not by `--keep`, not by regular `deactivate`, not by any profile operation. You can always restore from it manually.
+> **Your original backup is always safe.** It lives at `~/.local/share/claude-profile/.pre-profiles-backup/` and is never modified — not by `--keep`, not by regular `deactivate`, not by any profile operation. You can always restore from it manually.
 
 ## Migrating to native Claude Code profiles
 
@@ -157,7 +147,7 @@ claude-profile deactivate --keep
 brew uninstall claude-profile        # or: bash uninstall.sh
 
 # 4. Clean up (optional)
-rm -rf ~/.claude/__profiles__
+rm -rf ~/.local/share/claude-profile
 ```
 
 `--keep` saves your profile, clears the active marker, and leaves all your files in place — Claude Code sees normal config. Without `--keep`, `deactivate` restores your original pre-profiles config.
@@ -179,9 +169,9 @@ Claude Code reads config at startup. A running session won't pick up profile cha
 </details>
 
 <details>
-<summary><strong>Can I customize what gets switched?</strong></summary>
+<summary><strong>Can I customize the storage location?</strong></summary>
 
-Yes. See [configuration docs](docs/configuration.md).
+Set `CLAUDE_PROFILE_HOME` to override the profiles storage location, or `XDG_DATA_HOME` to use a custom XDG data directory. See [configuration docs](docs/configuration.md).
 </details>
 
 <details>
@@ -190,7 +180,7 @@ Yes. See [configuration docs](docs/configuration.md).
 ```bash
 claude-profile deactivate --keep   # or without --keep to restore original
 brew uninstall claude-profile      # or: bash uninstall.sh
-rm -rf ~/.claude/__profiles__      # remove profile data
+rm -rf ~/.local/share/claude-profile  # remove profile data
 ```
 
 See the full [uninstall guide](docs/uninstall.md).

@@ -98,6 +98,6 @@ for rc in "$ZDOTDIR_PATH/.zshrc" "$HOME/.bashrc"; do
 done
 
 echo ""
-info "Profiles are kept in ~/.claude/__profiles__/ — delete manually if needed."
+info "Profiles are kept in ~/.local/share/claude-profile/ — delete manually if needed."
 echo ""
 ok "Uninstall complete"

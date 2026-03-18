@@ -17,7 +17,7 @@ _run_bash_completion() {
     cword=2
   fi
   run bash -c "
-    export CLAUDE_CODE_HOME='$CLAUDE_CODE_HOME'
+    export CLAUDE_PROFILE_HOME='$CLAUDE_PROFILE_HOME'
     source '$REPO_DIR/completions/claude-profile.bash'
     COMP_WORDS=(claude-profile \"$words\")
     COMP_CWORD=$cword
@@ -29,11 +29,10 @@ _run_bash_completion() {
 # ─── Bash completion ─────────────────────────────────────────
 
 @test "bash completion: lists only real profiles, not hidden dirs" {
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/work"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/personal"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/.seed"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/.pre-profiles-backup"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/.managed"
+  mkdir -p "$CLAUDE_PROFILE_HOME/work"
+  mkdir -p "$CLAUDE_PROFILE_HOME/personal"
+  mkdir -p "$CLAUDE_PROFILE_HOME/.seed"
+  mkdir -p "$CLAUDE_PROFILE_HOME/.pre-profiles-backup"
 
   _run_bash_completion use ""
   [ "$status" -eq 0 ]
@@ -41,12 +40,11 @@ _run_bash_completion() {
   [[ "$output" == *"personal"* ]]
   [[ "$output" != *".seed"* ]]
   [[ "$output" != *".pre-profiles-backup"* ]]
-  [[ "$output" != *".managed"* ]]
 }
 
 @test "bash completion: completes commands at position 1" {
   run bash -c '
-    export CLAUDE_CODE_HOME="'"$CLAUDE_CODE_HOME"'"
+    export CLAUDE_PROFILE_HOME="'"$CLAUDE_PROFILE_HOME"'"
     source "'"$REPO_DIR/completions/claude-profile.bash"'"
     COMP_WORDS=(claude-profile "")
     COMP_CWORD=1
@@ -63,7 +61,7 @@ _run_bash_completion() {
 }
 
 @test "bash completion: no profile suggestions for new/fork" {
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/existing"
+  mkdir -p "$CLAUDE_PROFILE_HOME/existing"
   _run_bash_completion new ""
   [ "$status" -eq 0 ]
   [[ "$output" != *"existing"* ]]
@@ -77,10 +75,8 @@ _run_bash_completion() {
 }
 
 @test "bash completion: works with no profiles dir yet" {
-  # Before any profile is created, __profiles__ doesn't exist
   _run_bash_completion use ""
   [ "$status" -eq 0 ]
-  # Should not crash; no profile names in output
   local trimmed
   trimmed="$(echo "$output" | tr -d '[:space:]')"
   [[ -z "$trimmed" ]]
@@ -93,24 +89,45 @@ _run_bash_completion() {
   [ "$status" -eq 0 ]
 }
 
-@test "zsh completion: find excludes hidden dirs" {
-  # Directly test the find command from the zsh completion script
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/work"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/personal"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/.seed"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/.pre-profiles-backup"
+@test "zsh completion: profile listing excludes hidden dirs" {
+  mkdir -p "$CLAUDE_PROFILE_HOME/work"
+  mkdir -p "$CLAUDE_PROFILE_HOME/personal"
+  mkdir -p "$CLAUDE_PROFILE_HOME/.seed"
+  mkdir -p "$CLAUDE_PROFILE_HOME/.pre-profiles-backup"
 
-  local profiles_dir="$CLAUDE_CODE_HOME/__profiles__"
-  run find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -not -name '.*' -exec basename {} \;
+  # Verify the zsh script uses the expected filtering pattern
+  local zsh_script="$REPO_DIR/completions/claude-profile.zsh"
+  grep -q "find.*-not -name '\.\*'" "$zsh_script"
+
+  # Run the same find that the zsh script uses
+  local result
+  result="$(find "$CLAUDE_PROFILE_HOME" -mindepth 1 -maxdepth 1 -type d \
+    -not -name '.*' -exec basename {} \;)"
+  [[ "$result" == *"work"* ]]
+  [[ "$result" == *"personal"* ]]
+  [[ "$result" != *".seed"* ]]
+  [[ "$result" != *".pre-profiles-backup"* ]]
+}
+
+@test "zsh completion: functional test with zsh" {
+  command -v zsh >/dev/null 2>&1 || skip "zsh not available"
+
+  mkdir -p "$CLAUDE_PROFILE_HOME/work"
+  mkdir -p "$CLAUDE_PROFILE_HOME/personal"
+  mkdir -p "$CLAUDE_PROFILE_HOME/.seed"
+
+  run zsh -c "
+    profiles_dir='$CLAUDE_PROFILE_HOME'
+    profiles=(\"\${(@f)\$(find \"\$profiles_dir\" -mindepth 1 -maxdepth 1 -type d -not -name '.*' -exec basename {} \\;)}\")
+    printf '%s\n' \"\${profiles[@]}\"
+  "
   [ "$status" -eq 0 ]
   [[ "$output" == *"work"* ]]
   [[ "$output" == *"personal"* ]]
   [[ "$output" != *".seed"* ]]
-  [[ "$output" != *".pre-profiles-backup"* ]]
 }
 
 @test "zsh completion: contains all commands from cli" {
-  # Verify the zsh completion file lists the same commands as the bash one
   for cmd in new fork use list current save show edit delete deactivate history diff restore statusline version help; do
     grep -q "'$cmd:" "$REPO_DIR/completions/claude-profile.zsh"
   done

@@ -150,12 +150,30 @@ case "$current_shell" in
         install_bash_completions "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
 esac
 
-# ─── Create seed directory ──────────────────────────────────
+# ─── Resolve profiles dir ──────────────────────────────────
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
-SEED_DIR="$CLAUDE_DIR/__profiles__/.seed"
+if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
+  PROFILES_DIR="$CLAUDE_PROFILE_HOME"
+elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
+  PROFILES_DIR="$XDG_DATA_HOME/claude-profile"
+else
+  PROFILES_DIR="$HOME/.local/share/claude-profile"
+fi
+
+# ─── Migrate from old location ──────────────────────────────
+OLD_PROFILES_DIR="$CLAUDE_DIR/__profiles__"
+if [[ -d "$OLD_PROFILES_DIR" && ! -d "$PROFILES_DIR" && ! -L "$PROFILES_DIR" ]]; then
+  info "Migrating profiles from $OLD_PROFILES_DIR to $PROFILES_DIR..."
+  mkdir -p "$(dirname "$PROFILES_DIR")"
+  mv "$OLD_PROFILES_DIR" "$PROFILES_DIR"
+  ok "Migrated profiles to $PROFILES_DIR"
+fi
+
+# ─── Create seed directory ──────────────────────────────────
+SEED_DIR="$PROFILES_DIR/.seed"
 if [[ ! -d "$SEED_DIR" ]]; then
   mkdir -p "$SEED_DIR"
-  echo '{ "statusLine": { "type": "command", "command": "~/.claude/__profiles__/statusline.sh" } }' > "$SEED_DIR/settings.json"
+  echo '{}' > "$SEED_DIR/settings.json"
   echo '{}' > "$SEED_DIR/.claude.json"
   ok "Created seed templates in $SEED_DIR"
 fi

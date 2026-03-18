@@ -8,7 +8,6 @@ load test_helper
 
   # New profile has minimal seeded config
   [ -f "$CLAUDE_CODE_HOME/settings.json" ]
-  grep -q '"statusLine"' "$CLAUDE_CODE_HOME/settings.json"
   [ -f "$HOME/.claude.json" ]
   [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
 }
@@ -38,8 +37,8 @@ load test_helper
   run_cli_ok fork default
   run_cli_ok use default
 
-  [ -f "$CLAUDE_CODE_HOME/__profiles__/.current" ]
-  [ "$(cat "$CLAUDE_CODE_HOME/__profiles__/.current")" = "default" ]
+  [ -f "$CLAUDE_PROFILE_HOME/.current" ]
+  [ "$(cat "$CLAUDE_PROFILE_HOME/.current")" = "default" ]
 }
 
 @test "no-op when already active" {
@@ -54,6 +53,21 @@ load test_helper
   run_cli use nonexistent
   [ "$status" -ne 0 ]
   [[ "$output" == *"not found"* ]]
+}
+
+@test "use: clears .claude.json when target profile has none" {
+  run_cli_ok fork with-mcp
+  run_cli_ok new no-mcp
+  # Switch away so auto-save of no-mcp is done
+  run_cli_ok use with-mcp
+  [ -f "$HOME/.claude.json" ]
+
+  # Remove .claude.json from no-mcp AFTER auto-save has run
+  rm -f "$(profile_dir no-mcp)/.claude.json"
+
+  run_cli_ok use no-mcp
+  # .claude.json should be gone since no-mcp profile doesn't have it
+  [ ! -f "$HOME/.claude.json" ]
 }
 
 @test "MCP config switches correctly" {

@@ -15,7 +15,7 @@ cmd_new() {
   current="$(get_current)"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
-    _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move-bulk
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move
   fi
 
   mkdir -p "$profile_dir"
@@ -24,7 +24,7 @@ cmd_new() {
 
   _git_init "$profile_dir"
 
-  _load_profile_to_live "$profile_dir" --move-bulk
+  _load_profile_to_live "$profile_dir"
   set_current "$name"
   ok "Created and activated $(_pname "$name") ${DIM}(clean)${NC}"
 }
@@ -49,7 +49,7 @@ cmd_fork() {
     info "Saving profile $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before fork '$name'"
   fi
-  # Note: fork uses _snapshot_current (cp), not --move-bulk, because it
+  # Note: fork uses _snapshot_current (cp), not --move, because it
   # copies the current live state into the new profile. The live state
   # is preserved since the new profile IS the current state.
 
@@ -87,14 +87,17 @@ cmd_use() {
 
   _ensure_original_backup
 
+  # Pre-validate target profile before any destructive operations
+  _validate_profile_for_load "$profile_dir" || exit 1
+
   # Auto-save current profile before switching
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving $(_pname "$current")..."
-    _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'" --move-bulk
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'" --move
   fi
 
   info "Switching to $(_pname "$name")..."
-  _load_profile_to_live "$profile_dir" --move-bulk
+  _load_profile_to_live "$profile_dir" --move
 
   set_current "$name"
   ok "Active profile: $(_pname "$name")"
@@ -140,8 +143,14 @@ cmd_deactivate() {
     ok "Detached from $(_pname "$current") — current config kept as-is"
     info "You can safely remove ${BOLD}$PROFILES_DIR${NC} when ready"
   else
+    # Verify backup exists before doing destructive save
+    local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
+    if [[ ! -d "$backup_dir" ]]; then
+      err "Original backup not found — refusing to restore (would destroy live files)"
+      return 1
+    fi
     info "Saving $(_pname "$current")..."
-    _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move-bulk
+    _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move
     info "Restoring original state..."
     _restore_from_backup
     clear_current

@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
 load test_helper
 
-@test "statusline install bootstraps __profiles__ when missing" {
-  rm -rf "$CLAUDE_CODE_HOME/__profiles__"
+@test "statusline install bootstraps profiles dir when missing" {
+  rm -rf "$CLAUDE_PROFILE_HOME"
 
   run_cli_ok statusline install
 
-  [ -f "$CLAUDE_CODE_HOME/__profiles__/statusline.sh" ]
+  [ -f "$CLAUDE_PROFILE_HOME/statusline.sh" ]
   grep -q '"statusLine"' "$CLAUDE_CODE_HOME/settings.json"
 }
 
@@ -35,13 +35,13 @@ load test_helper
   [[ "$output" == *"already configured"* ]]
 }
 
-@test "statusline install respects custom CLAUDE_CODE_HOME in settings.json" {
-  export CLAUDE_CODE_HOME="$HOME/custom-claude"
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
+@test "statusline install respects custom CLAUDE_PROFILE_HOME in script path" {
+  export CLAUDE_PROFILE_HOME="$HOME/custom-profiles"
+  mkdir -p "$CLAUDE_PROFILE_HOME"
   echo '{"existing":true}' > "$CLAUDE_CODE_HOME/settings.json"
 
   run_cli_ok statusline install
 
-  grep -Fq "\"command\": \"$CLAUDE_CODE_HOME/__profiles__/statusline.sh\"" \
+  grep -Fq "\"command\": \"$CLAUDE_PROFILE_HOME/statusline.sh\"" \
     "$CLAUDE_CODE_HOME/settings.json"
 }

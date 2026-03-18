@@ -11,7 +11,15 @@ _claude_profile_completions() {
     return
   fi
 
-  local profiles_dir="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__"
+  # Resolve profiles dir: CLAUDE_PROFILE_HOME > XDG_DATA_HOME > default
+  local profiles_dir
+  if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
+    profiles_dir="$CLAUDE_PROFILE_HOME"
+  elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
+    profiles_dir="$XDG_DATA_HOME/claude-profile"
+  else
+    profiles_dir="$HOME/.local/share/claude-profile"
+  fi
   local profiles=""
   if [[ -d "$profiles_dir" ]]; then
     profiles="$(find "$profiles_dir" -mindepth 1 -maxdepth 1 -type d -not -name '.*' -exec basename {} \; 2>/dev/null)"

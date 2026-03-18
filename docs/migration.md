@@ -15,7 +15,7 @@ claude-profile deactivate --keep
 brew uninstall claude-profile    # or: bash uninstall.sh
 
 # Clean up profile data (optional — safe to keep for reference)
-rm -rf ~/.claude/__profiles__
+rm -rf ~/.local/share/claude-profile
 ```
 
 After this, your `~/.claude/` will look exactly as if you'd configured it manually — Claude Code (and any native profile system) will see normal config files.
@@ -23,18 +23,17 @@ After this, your `~/.claude/` will look exactly as if you'd configured it manual
 ## What `deactivate --keep` does
 
 1. **Saves** your current profile to its directory (so you have a copy)
-2. **Moves** bulk data (projects, memory, etc.) back to the live location
-3. **Clears** the active profile marker (`.current` file)
-4. **Does NOT** restore the original backup — your current config stays
+2. **Clears** the active profile marker (`.current` file)
+3. **Does NOT** restore the original backup — your current config stays
 
-> **Your original backup is safe.** Neither `--keep` nor regular `deactivate` ever modifies the backup at `~/.claude/__profiles__/.pre-profiles-backup/`. It is created once and never touched. You can always restore from it manually, even after migration.
+> **Your original backup is safe.** Neither `--keep` nor regular `deactivate` ever modifies the backup at `~/.local/share/claude-profile/.pre-profiles-backup/`. It is created once and never touched. You can always restore from it manually, even after migration.
 
 After running it:
 - `~/.claude/settings.json` — your current profile's settings (unchanged)
 - `~/.claude/CLAUDE.md` — your current profile's instructions (unchanged)
 - `~/.claude/projects/` — your current profile's memory (unchanged)
 - `~/.claude.json` — your current profile's MCP servers (unchanged)
-- `~/.claude/__profiles__/` — all saved profiles (can be deleted or kept for reference)
+- `~/.local/share/claude-profile/` — all saved profiles (can be deleted or kept for reference)
 
 ## What `deactivate` (without --keep) does
 
@@ -42,17 +41,17 @@ Restores the backup taken when you first ran `fork` or `new`. Use this if you wa
 
 ## Accessing old profiles after migration
 
-Even after `deactivate --keep`, all your profiles are saved in `~/.claude/__profiles__/<name>/`. Each profile directory contains all the files that were part of that profile. You can manually copy files from any profile:
+Even after `deactivate --keep`, all your profiles are saved in `~/.local/share/claude-profile/<name>/`. Each profile directory contains all the files that were part of that profile. You can manually copy files from any profile:
 
 ```bash
 # See what profiles you had
-ls ~/.claude/__profiles__/
+ls ~/.local/share/claude-profile/
 
 # Copy a specific file from an old profile
-cp ~/.claude/__profiles__/work/CLAUDE.md ~/somewhere/
+cp ~/.local/share/claude-profile/work/CLAUDE.md ~/somewhere/
 
 # View the git history of a profile
-git -C ~/.claude/__profiles__/work log --oneline
+git -C ~/.local/share/claude-profile/work log --oneline
 ```
 
 ## Removing the statusline
@@ -60,10 +59,21 @@ git -C ~/.claude/__profiles__/work log --oneline
 If you ran `claude-profile statusline install`, also remove:
 
 ```bash
-rm -f ~/.claude/__profiles__/statusline.sh
+rm -f ~/.local/share/claude-profile/statusline.sh
 ```
 
 And remove the `"statusLine"` entry from `~/.claude/settings.json`, or set up a new one using Claude Code's `/statusline` command.
+
+## Migrating from v0.x (old storage location)
+
+If you are upgrading from v0.x where profiles were stored in `~/.claude/__profiles__/`, the `install.sh` script automatically migrates your profiles to the new XDG-compliant location (`~/.local/share/claude-profile/`).
+
+If you need to migrate manually:
+
+```bash
+mv ~/.claude/__profiles__ ~/.local/share/claude-profile
+./install.sh
+```
 
 ## Troubleshooting
 
@@ -72,13 +82,13 @@ And remove the `"statusLine"` entry from `~/.claude/settings.json`, or set up a 
 Your profile is still saved. Find it and copy the files back:
 
 ```bash
-ls ~/.claude/__profiles__/
+ls ~/.local/share/claude-profile/
 # Find your profile name, then:
-cp ~/.claude/__profiles__/YOUR_PROFILE/settings.json ~/.claude/settings.json
-cp ~/.claude/__profiles__/YOUR_PROFILE/.claude.json ~/.claude.json
+cp ~/.local/share/claude-profile/YOUR_PROFILE/settings.json ~/.claude/settings.json
+cp ~/.local/share/claude-profile/YOUR_PROFILE/.claude.json ~/.claude.json
 # ... etc for other files you need
 ```
 
-**I deleted `__profiles__/` and need my backup:**
+**I deleted the profiles directory and need my backup:**
 
-If you had a backup, it was at `~/.claude/__profiles__/.pre-profiles-backup/`. Once deleted, it cannot be recovered. This is why we recommend running `deactivate --keep` first.
+If you had a backup, it was at `~/.local/share/claude-profile/.pre-profiles-backup/`. Once deleted, it cannot be recovered. This is why we recommend running `deactivate --keep` first.

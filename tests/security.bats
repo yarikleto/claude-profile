@@ -75,28 +75,27 @@ load test_helper
 
 # ─── Symlink safety ──────────────────────────────────────
 
-@test "fork: does not follow symlinks in managed items" {
+@test "fork: follows live symlinks but stores as regular files" {
   local secret="$BATS_TEST_TMPDIR/secret"
   echo "TOP SECRET" > "$secret"
 
-  # Replace a managed item with a symlink to the secret
   rm "$CLAUDE_CODE_HOME/settings.json"
   ln -s "$secret" "$CLAUDE_CODE_HOME/settings.json"
 
   run_cli_ok fork symtest
 
-  # The profile should NOT contain the secret file's content
   local profile_settings
   profile_settings="$(profile_dir symtest)/settings.json"
-  if [[ -f "$profile_settings" ]]; then
-    ! grep -q "TOP SECRET" "$profile_settings"
-  fi
-  # The profile entry should not be a symlink
+  # Content SHOULD be captured (live symlinks are trusted)
+  [ -f "$profile_settings" ]
+  grep -q "TOP SECRET" "$profile_settings"
+  # But stored as a regular file, not a symlink
   [ ! -L "$profile_settings" ]
 }
 
-@test "use: does not follow symlinks in profile directories" {
+@test "use: rejects profile with symlink in profile directory" {
   run_cli_ok fork symusetest
+  run_cli_ok fork other
 
   local secret="$BATS_TEST_TMPDIR/secret"
   echo "TOP SECRET" > "$secret"
@@ -105,7 +104,10 @@ load test_helper
   rm "$(profile_dir symusetest)/settings.json"
   ln -s "$secret" "$(profile_dir symusetest)/settings.json"
 
-  run_cli_ok use symusetest
+  # Validation should reject the profile entirely
+  run_cli use symusetest
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Symlink"* ]]
 
   # The live settings.json should not contain the secret
   if [[ -f "$CLAUDE_CODE_HOME/settings.json" ]]; then
@@ -113,82 +115,11 @@ load test_helper
   fi
 }
 
-# ─── .managed validation ─────────────────────────────────
-
-@test "rejects .managed entries with path traversal" {
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
-  echo "evil:$HOME/../../etc/passwd" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
-
-  run_cli fork managed-test
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Invalid managed item"* ]]
-}
-
-@test "rejects .managed entries with .. component" {
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
-  echo "evil:../../../etc/shadow" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
-
-  run_cli fork managed-test
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Invalid managed item"* ]]
-}
-
-@test "accepts valid .managed entries under HOME" {
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
-  echo "settings.json" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
-
-  run_cli_ok fork managed-ok
-}
-
-@test ".managed storage name cannot escape the profile directory" {
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
-  echo "../escape:$HOME/.claude.json" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
-
-  run_cli fork managed-name-escape
-  [ ! -e "$CLAUDE_CODE_HOME/__profiles__/escape" ]
-}
-
-@test "valid custom .managed entry still works when target parent directory is absent" {
-  local custom_dir="$HOME/custom-config"
-  local custom_file="$custom_dir/settings.override.json"
-
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__" "$custom_dir"
-  echo '{"custom":true}' > "$custom_file"
-  echo "custom:$custom_file" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
-
-  run_cli_ok fork managed-custom
-  run_cli_ok new other
-
-  rm -rf "$custom_dir"
-
-  run_cli_ok use managed-custom
-  [ -f "$custom_file" ]
-  grep -q '"custom":true' "$custom_file"
-}
-
-@test "use: rejects managed targets that escape HOME through a symlinked parent" {
-  local outside_dir="$BATS_TEST_TMPDIR/outside"
-  mkdir -p "$outside_dir" "$CLAUDE_CODE_HOME/__profiles__/escaped"
-
-  ln -s "$outside_dir" "$HOME/link"
-  echo "custom:$HOME/link/escaped.txt" > "$CLAUDE_CODE_HOME/__profiles__/.managed"
-  echo "written-outside" > "$(profile_dir escaped)/custom"
-
-  git -C "$(profile_dir escaped)" init -q
-  git -C "$(profile_dir escaped)" add -A
-  git -C "$(profile_dir escaped)" \
-    -c user.name=test -c user.email=test@test commit -q -m "init"
-
-  run_cli use escaped
-  [ "$status" -ne 0 ]
-  [ ! -e "$outside_dir/escaped.txt" ]
-}
-
 @test "use: rejects nested symlinks inside managed directories" {
   local secret="$BATS_TEST_TMPDIR/secret.txt"
   echo "TOP SECRET" > "$secret"
 
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__/symlinked/skills"
+  mkdir -p "$CLAUDE_PROFILE_HOME/symlinked/skills"
   ln -s "$secret" "$(profile_dir symlinked)/skills/outside"
 
   git -C "$(profile_dir symlinked)" init -q
@@ -201,13 +132,24 @@ load test_helper
   [ ! -L "$CLAUDE_CODE_HOME/skills/outside" ]
 }
 
+@test "use: rejects unreadable regular files in profile" {
+  run_cli_ok fork target
+  run_cli_ok fork other
+
+  chmod 000 "$(profile_dir target)/settings.json"
+
+  run_cli use target
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unreadable"* ]] || [[ "$output" == *"unreadable"* ]]
+}
+
 @test "statusline install: does not overwrite an existing symlink target" {
-  mkdir -p "$CLAUDE_CODE_HOME/__profiles__"
+  mkdir -p "$CLAUDE_PROFILE_HOME"
   echo '{"statusLine":null}' > "$CLAUDE_CODE_HOME/settings.json"
 
   local target="$BATS_TEST_TMPDIR/target.txt"
   echo "original" > "$target"
-  ln -s "$target" "$CLAUDE_CODE_HOME/__profiles__/statusline.sh"
+  ln -s "$target" "$CLAUDE_PROFILE_HOME/statusline.sh"
 
   run_cli statusline install
   [ "$status" -ne 0 ]

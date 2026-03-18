@@ -7,7 +7,7 @@ _json_merge() {
 
   if command -v jq &>/dev/null; then
     tmp="$(mktemp)"
-    if jq --arg v "$value" ". + {\"$key\": {\"type\": \"command\", \"command\": \$v}}" "$file" > "$tmp" 2>/dev/null; then
+    if jq --arg k "$key" --arg v "$value" '. + {($k): {"type": "command", "command": $v}}' "$file" > "$tmp" 2>/dev/null; then
       mv "$tmp" "$file"; return 0
     fi
     rm -f "$tmp"
@@ -51,7 +51,15 @@ cmd_statusline() {
 input=$(cat)
 model=$(echo "$input" | grep -o '"display_name":"[^"]*"' | head -1 | cut -d'"' -f4)
 model="${model:-Claude}"
-profile_file="${CLAUDE_CODE_HOME:-$HOME/.claude}/__profiles__/.current"
+# Resolve profiles dir: CLAUDE_PROFILE_HOME > XDG_DATA_HOME > default
+if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
+  _profiles_dir="$CLAUDE_PROFILE_HOME"
+elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
+  _profiles_dir="$XDG_DATA_HOME/claude-profile"
+else
+  _profiles_dir="$HOME/.local/share/claude-profile"
+fi
+profile_file="$_profiles_dir/.current"
 if [[ -f "$profile_file" ]]; then
   profile="$(tr -cd 'a-zA-Z0-9._-' < "$profile_file")"
   echo "${model} · profile: ${profile}"
@@ -78,7 +86,8 @@ SCRIPT
           fi
         fi
       else
-        echo '{ "statusLine": { "type": "command", "command": "~/.claude/__profiles__/statusline.sh" } }' > "$settings"
+        mkdir -p "$CLAUDE_DIR"
+        echo "{ \"statusLine\": { \"type\": \"command\", \"command\": \"$statusline_script\" } }" > "$settings"
         ok "Created settings.json with status line"
       fi
 
