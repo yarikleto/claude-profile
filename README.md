@@ -16,6 +16,9 @@ Define each as a profile, switch with one command.
 
 ---
 
+> **This tool manages global (user-level) profiles** — it switches your entire `~/.claude/` directory and `~/.claude.json`.
+> If you need **project-level profiles** (per-repo settings), see [claude-project-profile](https://github.com/yarikleto/claude-project-profile).
+
 ```bash
 $ claude-profile fork default          # save your current setup
 $ claude-profile new code-review       # create a new profile
