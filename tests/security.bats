@@ -63,6 +63,24 @@ load test_helper
   [[ "$output" == *"Invalid profile name"* ]]
 }
 
+@test "new: rejects name with backslash (terminal escape injection)" {
+  run_cli fork 'test\033escape'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Invalid profile name"* ]]
+}
+
+@test "new: rejects name with spaces" {
+  run_cli fork "my profile"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Invalid profile name"* ]]
+}
+
+@test "new: rejects name with special characters" {
+  run_cli fork 'test$name'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Invalid profile name"* ]]
+}
+
 @test "new: accepts valid name with dots and dashes" {
   run_cli_ok fork "my-profile.v2"
   [ -d "$(profile_dir my-profile.v2)" ]
@@ -71,6 +89,11 @@ load test_helper
 @test "new: accepts valid name with underscores" {
   run_cli_ok fork "my_profile"
   [ -d "$(profile_dir my_profile)" ]
+}
+
+@test "new: accepts valid name with alphanumeric, dots, dashes, underscores" {
+  run_cli_ok fork "my-profile_v2.0"
+  [ -d "$(profile_dir my-profile_v2.0)" ]
 }
 
 # ─── Symlink safety ──────────────────────────────────────

@@ -66,6 +66,7 @@ _diff_unsaved() {
 
   local tmp
   tmp="$(mktemp -d)" || return 1
+  trap "rm -rf '$tmp'" EXIT
   if ! _snapshot_live_for_diff "$tmp"; then
     rm -rf "$tmp"
     return 1
@@ -107,6 +108,10 @@ _diff_since_ref() {
 cmd_restore() {
   local name="" ref=""
   for arg in "$@"; do
+    if [[ "$arg" =~ [/[:cntrl:]] || "$arg" == .* || "$arg" == -* ]]; then
+      err "Invalid profile name '$arg' (must start with alphanumeric, no slashes or dots)"
+      exit 1
+    fi
     if [[ -d "$PROFILES_DIR/$arg" ]]; then
       name="$arg"
     else
@@ -115,6 +120,9 @@ cmd_restore() {
   done
 
   name="${name:-$(get_current)}"
+  if [[ -n "$name" ]]; then
+    _validate_profile_name "$name"
+  fi
   if [[ -z "$name" || -z "$ref" ]]; then
     err "Usage: claude-profile restore [name] <commit|date>"; exit 1
   fi

@@ -33,8 +33,15 @@ cp "$SCRIPT_DIR"/commands/*.sh "$INSTALL_LIB/commands/"
 chmod +x "$INSTALL_DIR/claude-profile"
 
 # Patch SCRIPT_DIR in installed binary to point to lib location
-sed -i.bak "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"$INSTALL_LIB\"|" "$INSTALL_DIR/claude-profile"
-rm -f "$INSTALL_DIR/claude-profile.bak"
+# Use awk with ENVIRON to avoid injection via special chars (|, &, \) in paths.
+# ENVIRON reads the raw env var value without processing escape sequences,
+# unlike awk -v which interprets \n, \t, etc.
+INSTALL_LIB="$INSTALL_LIB" awk '{
+  if ($0 ~ /^SCRIPT_DIR=/) print "SCRIPT_DIR=\"" ENVIRON["INSTALL_LIB"] "\""
+  else print
+}' "$INSTALL_DIR/claude-profile" > "$INSTALL_DIR/claude-profile.tmp"
+mv "$INSTALL_DIR/claude-profile.tmp" "$INSTALL_DIR/claude-profile"
+chmod +x "$INSTALL_DIR/claude-profile"
 
 ok "Installed to $INSTALL_DIR/claude-profile"
 

@@ -39,11 +39,12 @@ _ensure_original_backup() {
   _ensure_seed_dir
 }
 
-# Validate that a profile name is safe (no path traversal, no flag injection).
+# Validate that a profile name is safe (whitelist approach).
+# Allowed: [a-zA-Z0-9._-], must not start with dot or dash.
 _validate_profile_name() {
   local name="$1"
-  if [[ "$name" =~ [/[:cntrl:]] || "$name" == ..* || "$name" == .* || "$name" == -* ]]; then
-    err "Invalid profile name '$name' (must start with alphanumeric, no slashes or dots)"
+  if [[ "$name" =~ [^a-zA-Z0-9._-] || "$name" == ..* || "$name" == .* || "$name" == -* ]]; then
+    err "Invalid profile name '$name' (use only letters, numbers, dots, dashes, underscores)"
     exit 1
   fi
 }

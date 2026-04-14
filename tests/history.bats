@@ -30,3 +30,21 @@ load test_helper
   [ "$status" -eq 0 ]
   [[ "$output" == *"No history"* ]]
 }
+
+@test "restore: rejects path traversal in name" {
+  run_cli restore "../../etc" HEAD
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Invalid profile name"* ]]
+}
+
+@test "restore: rejects name starting with dot" {
+  run_cli restore ".hidden" HEAD
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Invalid profile name"* ]]
+}
+
+@test "restore: rejects name starting with dash" {
+  run_cli restore "--flag" HEAD
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Invalid profile name"* ]]
+}

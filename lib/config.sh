@@ -1,6 +1,6 @@
 # config.sh — Constants and path resolution
 
-VERSION="2.0.0"
+VERSION="2.0.1"
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 
 # Storage location: CLAUDE_PROFILE_HOME > XDG_DATA_HOME/claude-profile > ~/.local/share/claude-profile
@@ -32,7 +32,3 @@ GITIGNORE_CONTENT="/projects
 /plugins
 /history.jsonl"
 
-# Match actual parent-directory traversal segments, not ordinary ".." in filenames.
-_has_parent_traversal() {
-  [[ "$1" =~ (^|/)\.\.(/|$) ]]
-}

@@ -236,3 +236,38 @@ EOF
   grep -q 'source ~/.local/share/bash-completion/completions/claude-profile' "$HOME/.bashrc"
   grep -q '# <<< claude-profile completions <<<' "$HOME/.bashrc"
 }
+
+# ─── Sed injection safety (install path with special chars) ──
+
+@test "install: handles pipe character in install path" {
+  export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/bin|pipe"
+  mkdir -p "$CLAUDE_PROFILE_INSTALL_DIR"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+
+  local expected_lib="$CLAUDE_PROFILE_INSTALL_DIR/claude-profile-lib"
+  grep -qF "SCRIPT_DIR=\"$expected_lib\"" "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile"
+}
+
+@test "install: handles ampersand in install path" {
+  export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/bin&amp"
+  mkdir -p "$CLAUDE_PROFILE_INSTALL_DIR"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+
+  local expected_lib="$CLAUDE_PROFILE_INSTALL_DIR/claude-profile-lib"
+  grep -qF "SCRIPT_DIR=\"$expected_lib\"" "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile"
+}
+
+@test "install: handles backslash in install path" {
+  export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/bin\\slash"
+  mkdir -p "$CLAUDE_PROFILE_INSTALL_DIR"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+
+  local expected_lib="$CLAUDE_PROFILE_INSTALL_DIR/claude-profile-lib"
+  grep -qF "SCRIPT_DIR=\"$expected_lib\"" "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile"
+}
