@@ -403,51 +403,48 @@ JSON
   grep -q '"unsaved_edit"' "$(profile_dir default)/settings.json"
 }
 
-@test "use: symlink planted in profile dir does not overwrite live files" {
+@test "use: symlink in profile dir is auto-repaired, no symlink in live" {
   run_cli_ok fork legit
   run_cli_ok fork other
 
-  local target_file="$BATS_TEST_TMPDIR/attacker-controlled"
-  echo "attacker data" > "$target_file"
+  local target_file="$BATS_TEST_TMPDIR/external-content"
+  echo "external data" > "$target_file"
 
   # Plant a symlink in the profile directory
   rm -f "$(profile_dir legit)/settings.json"
   ln -s "$target_file" "$(profile_dir legit)/settings.json"
 
-  # Before switching, record current settings
-  local before
-  before="$(cat "$CLAUDE_CODE_HOME/settings.json")"
+  # Auto-repair dereferences the symlink, then loads normally
+  run_cli_ok use legit
+  [[ "$output" == *"Repaired"* ]]
 
-  # Validation should reject the profile with a symlink
-  run_cli use legit
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Symlink"* ]]
+  # Profile symlink should now be a regular file
+  [ ! -L "$(profile_dir legit)/settings.json" ]
 
-  # Live settings must not contain attacker data
-  if [[ -f "$CLAUDE_CODE_HOME/settings.json" ]]; then
-    ! grep -q "attacker data" "$CLAUDE_CODE_HOME/settings.json"
-  fi
+  # Live settings must be a regular file with the dereferenced content
+  [ -f "$CLAUDE_CODE_HOME/settings.json" ]
+  [ ! -L "$CLAUDE_CODE_HOME/settings.json" ]
+  grep -q "external data" "$CLAUDE_CODE_HOME/settings.json"
 }
 
-@test "use: symlinked directory in profile dir is rejected" {
+@test "use: symlinked directory in profile dir is auto-repaired" {
   run_cli_ok fork safe-profile
   run_cli_ok fork other
 
-  local evil_dir="$BATS_TEST_TMPDIR/evil-agents"
-  mkdir -p "$evil_dir"
-  echo "evil" > "$evil_dir/payload.md"
+  local ext_dir="$BATS_TEST_TMPDIR/ext-agents"
+  mkdir -p "$ext_dir"
+  echo "agent content" > "$ext_dir/payload.md"
 
   # Replace agents dir with a symlink in the profile
   rm -rf "$(profile_dir safe-profile)/agents"
-  ln -s "$evil_dir" "$(profile_dir safe-profile)/agents"
+  ln -s "$ext_dir" "$(profile_dir safe-profile)/agents"
 
-  # Validation should reject the profile with a symlink
-  run_cli use safe-profile
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Symlink"* ]]
+  # Auto-repair dereferences the directory symlink
+  run_cli_ok use safe-profile
+  [[ "$output" == *"Repaired"* ]]
 
-  # The evil content should not appear in live agents
-  if [[ -d "$CLAUDE_CODE_HOME/agents" ]]; then
-    [ ! -f "$CLAUDE_CODE_HOME/agents/payload.md" ]
-  fi
+  # Live agents should be a regular directory with the content (not a symlink)
+  [ -d "$CLAUDE_CODE_HOME/agents" ]
+  [ ! -L "$CLAUDE_CODE_HOME/agents" ]
+  grep -q "agent content" "$CLAUDE_CODE_HOME/agents/payload.md"
 }

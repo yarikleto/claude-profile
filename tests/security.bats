@@ -116,7 +116,44 @@ load test_helper
   [ ! -L "$profile_settings" ]
 }
 
-@test "use: rejects profile with symlink in profile directory" {
+@test "fork: dereferences nested symlinks inside subdirectories" {
+  local target_file="$BATS_TEST_TMPDIR/target.txt"
+  echo "LINKED CONTENT" > "$target_file"
+
+  mkdir -p "$CLAUDE_CODE_HOME/plugins/cache"
+  ln -s "$target_file" "$CLAUDE_CODE_HOME/plugins/cache/linked.md"
+
+  run_cli_ok fork nesttest
+
+  local stored
+  stored="$(profile_dir nesttest)/plugins/cache/linked.md"
+  # Content should be captured
+  [ -f "$stored" ]
+  grep -q "LINKED CONTENT" "$stored"
+  # But stored as regular file, not a symlink
+  [ ! -L "$stored" ]
+}
+
+@test "save: dereferences nested symlinks inside subdirectories" {
+  run_cli_ok fork savesymtest
+  run_cli_ok use savesymtest
+
+  local target_file="$BATS_TEST_TMPDIR/target.txt"
+  echo "NESTED LINK" > "$target_file"
+
+  mkdir -p "$CLAUDE_CODE_HOME/plugins/cache"
+  ln -s "$target_file" "$CLAUDE_CODE_HOME/plugins/cache/linked.md"
+
+  run_cli_ok save -m "save with nested symlink"
+
+  local stored
+  stored="$(profile_dir savesymtest)/plugins/cache/linked.md"
+  [ -f "$stored" ]
+  grep -q "NESTED LINK" "$stored"
+  [ ! -L "$stored" ]
+}
+
+@test "use: auto-repairs top-level symlink in profile" {
   run_cli_ok fork symusetest
   run_cli_ok fork other
 
@@ -127,18 +164,18 @@ load test_helper
   rm "$(profile_dir symusetest)/settings.json"
   ln -s "$secret" "$(profile_dir symusetest)/settings.json"
 
-  # Validation should reject the profile entirely
-  run_cli use symusetest
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Symlink"* ]]
+  # Should succeed — symlink is auto-repaired
+  run_cli_ok use symusetest
+  [[ "$output" == *"Repaired"* ]]
 
-  # The live settings.json should not contain the secret
-  if [[ -f "$CLAUDE_CODE_HOME/settings.json" ]]; then
-    ! grep -q "TOP SECRET" "$CLAUDE_CODE_HOME/settings.json"
-  fi
+  # The profile's symlink should now be a regular file
+  [ ! -L "$(profile_dir symusetest)/settings.json" ]
+
+  # Live file should contain the content
+  grep -q "TOP SECRET" "$CLAUDE_CODE_HOME/settings.json"
 }
 
-@test "use: rejects nested symlinks inside managed directories" {
+@test "use: auto-repairs nested symlinks inside managed directories" {
   local secret="$BATS_TEST_TMPDIR/secret.txt"
   echo "TOP SECRET" > "$secret"
 
@@ -150,9 +187,25 @@ load test_helper
   git -C "$(profile_dir symlinked)" \
     -c user.name=test -c user.email=test@test commit -q -m "init"
 
-  run_cli use symlinked
-  [ "$status" -ne 0 ]
+  # Should succeed — nested symlink is auto-repaired
+  run_cli_ok use symlinked
+  [[ "$output" == *"Repaired"* ]]
+
+  # The repaired file should be loaded as regular file, not symlink
   [ ! -L "$CLAUDE_CODE_HOME/skills/outside" ]
+  grep -q "TOP SECRET" "$CLAUDE_CODE_HOME/skills/outside"
+}
+
+@test "use: rejects profile with broken symlink" {
+  run_cli_ok fork brokenlink
+  run_cli_ok fork other
+
+  # Create a symlink to a nonexistent target
+  ln -s "/nonexistent/path/file.txt" "$(profile_dir brokenlink)/bad"
+
+  run_cli use brokenlink
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Broken symlink"* ]]
 }
 
 @test "use: rejects unreadable regular files in profile" {

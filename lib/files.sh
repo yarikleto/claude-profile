@@ -14,7 +14,7 @@ _seed_profile() {
         continue
       fi
       if [[ -e "$f" ]]; then
-        cp -RH "$f" "$dst/"
+        cp -RL "$f" "$dst/"
       fi
     done
   else
@@ -31,8 +31,8 @@ _ensure_target_parent() {
 }
 
 # Copy live ~/.claude/ state into a profile directory (no git commit).
-# Follows symlinks at the source (user's live files are trusted) so that
-# symlinked settings are captured as regular files in the profile.
+# Follows all symlinks (user's live files are trusted) so that
+# symlinked files are captured as regular files in the profile.
 _snapshot_current() {
   local dst="$1"
   # Copy everything from CLAUDE_DIR
@@ -44,12 +44,12 @@ _snapshot_current() {
       continue
     fi
     if [[ -e "$f" ]]; then
-      cp -RH "$f" "$dst/$base"
+      cp -RL "$f" "$dst/$base"
     fi
   done
   # Special: always copy ~/.claude.json
   if [[ -e "$HOME/.claude.json" ]]; then
-    cp -RH "$HOME/.claude.json" "$dst/.claude.json"
+    cp -RL "$HOME/.claude.json" "$dst/.claude.json"
   fi
 }
 
@@ -72,22 +72,55 @@ _save_current_to() {
       if [[ "$move" == "--move" ]]; then
         mv "$f" "$dst/$base"
       else
-        cp -RH "$f" "$dst/$base"
+        cp -RL "$f" "$dst/$base"
       fi
     fi
   done
   # Special: always copy ~/.claude.json (even with --move, since it lives outside CLAUDE_DIR)
   if [[ -e "$HOME/.claude.json" ]]; then
     rm -rf "$dst/.claude.json"
-    cp -RH "$HOME/.claude.json" "$dst/.claude.json"
+    cp -RL "$HOME/.claude.json" "$dst/.claude.json"
   fi
   _git_commit "$dst" "$msg"
+}
+
+# Auto-repair symlinks left by older save code (which used cp -RH instead of cp -RL).
+# Replaces each symlink with a regular copy of its target. Fails on broken symlinks.
+_repair_profile_symlinks() {
+  local profile_dir="$1"
+  local repaired=0
+  local symlink
+  while IFS= read -r -d '' symlink; do
+    # Broken symlink: -L is true but -e is false
+    if [[ ! -e "$symlink" ]]; then
+      err "Broken symlink in profile — aborting switch (live files untouched)"
+      return 1
+    fi
+    # Replace symlink with dereferenced copy
+    local tmp="${symlink}.repair.$$"
+    if ! cp -RL "$symlink" "$tmp" 2>/dev/null; then
+      rm -rf "$tmp"
+      err "Cannot resolve symlink in profile — aborting switch (live files untouched)"
+      return 1
+    fi
+    rm "$symlink"
+    mv "$tmp" "$symlink"
+    repaired=$((repaired + 1))
+  done < <(find "$profile_dir" -not -path "$profile_dir/.git/*" -not -name ".git" -not -name ".gitignore" -type l -print0 2>/dev/null)
+
+  if [[ $repaired -gt 0 ]]; then
+    warn "Repaired $repaired symlink(s) in profile (from older save format)"
+  fi
 }
 
 # Pre-validate a profile directory is safe to load (no symlinks, all readable).
 # Call this BEFORE any destructive operations (like --move save).
 _validate_profile_for_load() {
   local profile_dir="$1"
+
+  # Auto-repair symlinks from older save code, then validate the rest
+  _repair_profile_symlinks "$profile_dir" || return 1
+
   local f
   for f in "$profile_dir"/* "$profile_dir"/.*; do
     local base
@@ -107,7 +140,7 @@ _validate_profile_for_load() {
           err "Cannot read files in $f — aborting switch (live files untouched)"
           return 1
         fi
-        # Reject nested symlinks inside directories (could escape sandbox)
+        # Defence-in-depth: reject any symlinks that survived repair
         local nested_symlink
         nested_symlink="$(find "$f" -type l 2>/dev/null | head -1)" || true
         if [[ -n "$nested_symlink" ]]; then
