@@ -12,7 +12,7 @@ cmd_new() {
 
   # Auto-save current profile before switching
   local current
-  current="$(get_current)"
+  current="$(get_current_validated)"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move
@@ -42,7 +42,7 @@ cmd_fork() {
   mkdir -p "$profile_dir"
 
   local current
-  current="$(get_current)"
+  current="$(get_current_validated)"
 
   # Auto-save current profile before switching
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
@@ -78,7 +78,7 @@ cmd_use() {
   fi
 
   local current
-  current="$(get_current)"
+  current="$(get_current_validated)"
 
   if [[ "$current" == "$name" ]]; then
     ok "$(_pname "$name") is already active"
@@ -130,7 +130,7 @@ cmd_deactivate() {
   fi
 
   local current
-  current="$(get_current)"
+  current="$(get_current_validated)"
   if [[ -z "$current" ]]; then
     warn "No profile is active"; return
   fi

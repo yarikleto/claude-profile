@@ -10,6 +10,25 @@ get_current() {
   fi
 }
 
+# Like get_current, but validates the stored name and exits with a clear error
+# if it fails validation (e.g. path traversal planted by an attacker or
+# filesystem corruption). Only call this when the result will be used in a
+# path — comparisons and empty-checks don't need it.
+get_current_validated() {
+  local name
+  name="$(get_current)"
+  if [[ -z "$name" ]]; then
+    echo ""
+    return
+  fi
+  if [[ "$name" =~ [^a-zA-Z0-9._-] || "$name" == ..* || "$name" == .* || "$name" == -* ]]; then
+    err ".current file is corrupt (invalid profile name: '$name')."
+    err "Run 'claude-profile list' to see available profiles, then 'claude-profile use <name>' to recover."
+    exit 1
+  fi
+  echo "$name"
+}
+
 set_current() { echo "$1" > "$CURRENT_FILE"; }
 clear_current() { rm -f "$CURRENT_FILE"; }
 

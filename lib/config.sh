@@ -1,6 +1,6 @@
 # config.sh — Constants and path resolution
 
-VERSION="2.0.2"
+VERSION="2.0.3"
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 
 # Storage location: CLAUDE_PROFILE_HOME > XDG_DATA_HOME/claude-profile > ~/.local/share/claude-profile
