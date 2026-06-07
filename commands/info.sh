@@ -82,7 +82,9 @@ cmd_delete() {
   fi
 
   if [[ $force -eq 0 ]]; then
-    read -rp "Delete profile '$name'? [y/N] " confirm
+    if ! read -rp "Delete profile '$name'? [y/N] " confirm; then
+      info "Cancelled"; return
+    fi
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled"; return; }
   fi
 

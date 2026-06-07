@@ -23,3 +23,14 @@ load test_helper
   [ "$status" -ne 0 ]
   [[ "$output" == *"not found"* ]]
 }
+
+@test "EOF at confirm prompt cancels cleanly without deleting" {
+  run_cli_ok fork victim
+  # fork auto-activates, so switch away so victim is deletable
+  run_cli_ok fork other
+  # delete without -f, with stdin at EOF so read gets no input
+  run_cli delete victim </dev/null
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Cancelled"* ]]
+  [ -d "$(profile_dir victim)" ]
+}
