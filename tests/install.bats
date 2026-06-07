@@ -225,25 +225,42 @@ EOF
   [ "$tmp_after" -le "$tmp_before" ]
 }
 
-@test "bash completions: auto-adds source line to .bashrc" {
-  # Only relevant on hosts WITHOUT bash-completion: install.sh edits .bashrc as
-  # a fallback. Where bash-completion is present (typical Linux), it relies on
-  # the auto-loaded XDG completions dir and makes no .bashrc edit. Mirror the
-  # installer's own detection so we skip exactly when that path isn't taken.
-  if [[ -d "$HOME/.local/share/bash-completion/completions" ]] || \
-     bash -c 'pkg-config --exists bash-completion 2>/dev/null' 2>/dev/null; then
-    skip "bash-completion present — installer uses XDG dir, not .bashrc"
-  fi
+# The completion file always lands in the user completions dir. When
+# bash-completion v2 is present it auto-loads that dir, so install.sh must NOT
+# edit .bashrc. Creating the dir is the installer's own signal that it's
+# present, so this exercises the no-edit path deterministically on every host.
+@test "bash completions: install into the auto-loaded XDG dir without touching .bashrc" {
+  unset CLAUDE_PROFILE_COMPLETIONS_DIR
+  export SHELL="/bin/bash"
+  echo 'export PATH="/usr/bin:$PATH"' > "$HOME/.bashrc"
+  mkdir -p "$HOME/.local/share/bash-completion/completions"
 
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.local/share/bash-completion/completions/claude-profile" ]
+  ! grep -q 'claude-profile completions' "$HOME/.bashrc"
+}
+
+# On systems WITHOUT bash-completion, install.sh falls back to adding a source
+# line to .bashrc. That fallback only triggers where the package is absent, so
+# assert the path that matches the host (mirroring the installer's own check)
+# rather than skipping where bash-completion happens to be installed.
+@test "bash completions: fall back to a .bashrc source line when bash-completion is absent" {
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/bash"
   echo 'export PATH="/usr/bin:$PATH"' > "$HOME/.bashrc"
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-  grep -q '# >>> claude-profile completions >>>' "$HOME/.bashrc"
-  grep -q 'source ~/.local/share/bash-completion/completions/claude-profile' "$HOME/.bashrc"
-  grep -q '# <<< claude-profile completions <<<' "$HOME/.bashrc"
+  [ -f "$HOME/.local/share/bash-completion/completions/claude-profile" ]
+
+  if bash -c 'pkg-config --exists bash-completion 2>/dev/null' 2>/dev/null; then
+    ! grep -q 'claude-profile completions' "$HOME/.bashrc"
+  else
+    grep -q '# >>> claude-profile completions >>>' "$HOME/.bashrc"
+    grep -q 'source ~/.local/share/bash-completion/completions/claude-profile' "$HOME/.bashrc"
+    grep -q '# <<< claude-profile completions <<<' "$HOME/.bashrc"
+  fi
 }
 
 # ─── Sed injection safety (install path with special chars) ──
