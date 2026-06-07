@@ -448,3 +448,52 @@ JSON
   [ ! -L "$CLAUDE_CODE_HOME/agents" ]
   grep -q "agent content" "$CLAUDE_CODE_HOME/agents/payload.md"
 }
+
+# ─── User-managed ~/.claude/.git is not ingested into profiles ──
+
+@test "fork: does not ingest a user-managed ~/.claude/.git" {
+  # User version-controls their own ~/.claude/ (a normal dotfiles practice)
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  run_cli_ok fork myprofile
+
+  # The profile must get its OWN baseline commit, not the user's history
+  local log
+  log="$(git -C "$(profile_dir myprofile)" log --oneline)"
+  [[ "$log" == *"Profile created"* ]]
+  [[ "$log" != *"my personal config"* ]]
+}
+
+@test "fork: profile keeps the static .gitignore even when ~/.claude has a .git" {
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  run_cli_ok fork myprofile
+
+  # The static .gitignore must be present so large data dirs stay untracked
+  [ -f "$(profile_dir myprofile)/.gitignore" ]
+  grep -q '/projects' "$(profile_dir myprofile)/.gitignore"
+}
+
+@test "save: does not overwrite the profile's own .git with a live ~/.claude/.git" {
+  run_cli_ok fork myprofile
+  run_cli_ok use myprofile
+
+  # User starts version-controlling their live ~/.claude/ AFTER activating
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  # Change a tracked file and save
+  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "x"
+
+  # The profile's own baseline history must survive (not be clobbered)
+  local log
+  log="$(git -C "$(profile_dir myprofile)" log --oneline)"
+  [[ "$log" == *"Profile created"* ]]
+  [[ "$log" != *"my personal config"* ]]
+}

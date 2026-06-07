@@ -40,7 +40,9 @@ _snapshot_current() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." ]]; then
+    # Skip a user-managed .git/.gitignore — the tool manages its own in
+    # profile dirs and must never ingest the user's repository history.
+    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
       continue
     fi
     if [[ -e "$f" ]]; then
@@ -64,7 +66,9 @@ _save_current_to() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." ]]; then
+    # Skip a user-managed .git/.gitignore in live ~/.claude/ so we neither
+    # ingest the user's repo nor clobber the profile's own .git/.gitignore.
+    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
       continue
     fi
     if [[ -e "$f" ]]; then
