@@ -41,7 +41,7 @@ cmd_show() {
   _require_profile_exists "$name"
 
   echo -e "${CYAN}${BOLD}$name${NC}"
-  _show_summary "$PROFILES_DIR/$name"
+  _show_profile_summary "$name"
 }
 
 cmd_edit() {

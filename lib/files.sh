@@ -218,7 +218,19 @@ _restore_from_backup() {
   _load_profile_to_live "$backup_dir"
 }
 
-# Print a summary of what a profile directory contains.
+# Print one summary row.
+_show_summary_item() {
+  local path="$1" label="$2"
+  if [[ -d "$path" ]]; then
+    local count
+    count="$(find "$path" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
+    echo -e "  ${GREEN}✓${NC} ${BOLD}$label${NC} ${DIM}($count items)${NC}"
+  elif [[ -f "$path" ]]; then
+    echo -e "  ${GREEN}✓${NC} ${BOLD}$label${NC}"
+  fi
+}
+
+# Print a summary of what a profile directory physically contains.
 _show_summary() {
   local dir="$1"
   local f
@@ -228,12 +240,34 @@ _show_summary() {
     if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
       continue
     fi
-    if [[ -d "$f" ]]; then
-      local count
-      count="$(find "$f" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
-      echo -e "  ${GREEN}✓${NC} ${BOLD}$base${NC} ${DIM}($count items)${NC}"
-    elif [[ -f "$f" ]]; then
-      echo -e "  ${GREEN}✓${NC} ${BOLD}$base${NC}"
-    fi
+    _show_summary_item "$f" "$base"
   done
+}
+
+# Print a summary of the active profile's live files. After `use --move`,
+# these are the active profile contents; the profile directory is thin.
+_show_live_summary() {
+  local f
+  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
+    local base
+    base="$(basename "$f")"
+    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
+      continue
+    fi
+    _show_summary_item "$f" "$base"
+  done
+
+  if [[ -e "$HOME/.claude.json" ]]; then
+    _show_summary_item "$HOME/.claude.json" ".claude.json"
+  fi
+}
+
+# Print the logical contents of a profile, accounting for a moved-thin active dir.
+_show_profile_summary() {
+  local name="$1"
+  if [[ "$(get_current)" == "$name" ]]; then
+    _show_live_summary
+  else
+    _show_summary "$PROFILES_DIR/$name"
+  fi
 }

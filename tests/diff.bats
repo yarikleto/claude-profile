@@ -9,10 +9,32 @@ load test_helper
   [[ "$output" == *"no changes"* ]]
 }
 
+@test "no changes after switching into a moved-thin active profile" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  run_cli_ok use alpha
+
+  run_cli diff
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no changes"* ]]
+}
+
 @test "detects unsaved changes" {
   run_cli_ok fork default
   run_cli_ok use default
   echo '{"unsaved": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli diff
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"settings.json"* ]]
+}
+
+@test "detects deleted files after switching into a moved-thin active profile" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  run_cli_ok use alpha
+
+  rm "$CLAUDE_CODE_HOME/settings.json"
+
   run_cli diff
   [ "$status" -eq 0 ]
   [[ "$output" == *"settings.json"* ]]

@@ -81,3 +81,15 @@ load test_helper
   [ -f "$HOME/.claude.json" ]
   grep -q '"mcpServers"' "$HOME/.claude.json"
 }
+
+@test "use: summary shows live contents after target profile is moved thin" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+
+  run_cli use alpha
+  [[ "$status" -eq 0 \
+    && "$output" == *"Active profile: alpha"* \
+    && "$output" == *"settings.json"* \
+    && "$output" == *"skills"* \
+    && "$output" == *".claude.json"* ]]
+}
