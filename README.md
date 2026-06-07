@@ -4,6 +4,7 @@
 
 <br>
 
+[![Tests](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml/badge.svg)](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Shell: Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnubash&logoColor=white)](claude-profile)
 [![Tests: bats](https://img.shields.io/badge/Tests-bats--core-yellow)](tests/)
