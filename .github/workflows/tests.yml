@@ -23,6 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install zsh (Linux)
+        # The completion tests syntax-check completions/claude-profile.zsh with
+        # `zsh -n`. macOS ships zsh; ubuntu-latest does not.
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
       - name: Install bats
         # apt's bats is 1.2.x, too old for $BATS_TEST_TMPDIR (added in 1.4).
         # Install a pinned modern release from source on every runner instead.
