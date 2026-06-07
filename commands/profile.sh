@@ -113,7 +113,7 @@ cmd_save() {
     esac
   done
 
-  name="${name:-$(get_current)}"
+  name="${name:-$(get_current_validated)}"
   _require_profile_name "$name" "claude-profile save [name] [-m message]"
   _ensure_original_backup
 
