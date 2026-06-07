@@ -217,6 +217,19 @@ bats tests/fork.bats    # Run tests for one command
 bats tests/ --tap       # TAP output for CI
 ```
 
+## Git hooks
+
+The repo ships a version-controlled `pre-push` hook (`hooks/pre-push`) that runs
+the full bats suite and **blocks the push if any test fails**. Activate it once
+per clone:
+
+```bash
+./scripts/setup-hooks.sh    # sets core.hooksPath=hooks
+```
+
+Bypass in an emergency with `git push --no-verify`. The hook errors out if `bats`
+isn't installed rather than silently letting an unverified push through.
+
 ## Releasing
 
 Version is defined in `lib/config.sh` as `VERSION="X.Y.Z"`. When creating a new release, **always keep the VERSION variable, git tag, and Homebrew formula in sync**:

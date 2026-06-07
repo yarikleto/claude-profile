@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# pre-push hook — run the full bats suite and block the push on any failure.
+#
+# This hook is version-controlled. It is activated per-clone by pointing git at
+# the tracked hooks directory:
+#
+#     git config core.hooksPath hooks
+#
+# (run scripts/setup-hooks.sh once to do that automatically).
+#
+# To push despite red/uninstalled tests in an emergency, bypass with:
+#
+#     git push --no-verify
+#
+set -euo pipefail
+
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' BOLD='\033[1m' NC='\033[0m'
+
+# Run from the repo root so `tests/` resolves regardless of where git invoked us.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if ! command -v bats >/dev/null 2>&1; then
+  echo -e "${RED}✗ pre-push: bats is not installed — cannot verify tests.${NC}" >&2
+  echo -e "  Install it (e.g. ${BOLD}brew install bats-core${NC}) or bypass with ${BOLD}git push --no-verify${NC}." >&2
+  exit 1
+fi
+
+echo -e "${YELLOW}▸ pre-push: running test suite before push...${NC}"
+
+if bats tests/; then
+  echo -e "${GREEN}✓ pre-push: all tests passed — pushing.${NC}"
+  exit 0
+else
+  echo -e "${RED}✗ pre-push: tests failed — push aborted.${NC}" >&2
+  echo -e "  Fix the failing tests, or bypass with ${BOLD}git push --no-verify${NC} (not recommended)." >&2
+  exit 1
+fi
