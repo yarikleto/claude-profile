@@ -226,6 +226,15 @@ EOF
 }
 
 @test "bash completions: auto-adds source line to .bashrc" {
+  # Only relevant on hosts WITHOUT bash-completion: install.sh edits .bashrc as
+  # a fallback. Where bash-completion is present (typical Linux), it relies on
+  # the auto-loaded XDG completions dir and makes no .bashrc edit. Mirror the
+  # installer's own detection so we skip exactly when that path isn't taken.
+  if [[ -d "$HOME/.local/share/bash-completion/completions" ]] || \
+     bash -c 'pkg-config --exists bash-completion 2>/dev/null' 2>/dev/null; then
+    skip "bash-completion present — installer uses XDG dir, not .bashrc"
+  fi
+
   unset CLAUDE_PROFILE_COMPLETIONS_DIR
   export SHELL="/bin/bash"
   echo 'export PATH="/usr/bin:$PATH"' > "$HOME/.bashrc"
