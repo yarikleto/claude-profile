@@ -254,6 +254,19 @@ EOF
   [[ "$output" == *"Add to your PATH"* ]]
 }
 
+@test "PATH check: suppresses hint when the install dir is exactly on PATH" {
+  # The mirror of the near-miss case: the dir still contains a '.', but this
+  # time it is literally on PATH. The hint must be suppressed — proving the
+  # fixed-string match still treats '.' as a real '.' and did not over-correct
+  # into always showing the hint.
+  export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/a.b/bin"
+  mkdir -p "$CLAUDE_PROFILE_INSTALL_DIR"
+
+  PATH="$CLAUDE_PROFILE_INSTALL_DIR:$PATH" run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Add to your PATH"* ]]
+}
+
 # ─── Sed injection safety (install path with special chars) ──
 
 @test "install: handles pipe character in install path" {
