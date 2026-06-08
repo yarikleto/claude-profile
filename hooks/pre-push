@@ -20,6 +20,12 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' BOLD='\033[1m' NC='\033[
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# Git invokes hooks with repository-local environment variables such as
+# GIT_DIR and GIT_INDEX_FILE. The test suite creates fixture repositories, so
+# do not let hook metadata redirect those fixture Git commands into this repo.
+unset $(git rev-parse --local-env-vars 2>/dev/null) \
+      GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM 2>/dev/null || true
+
 if ! command -v bats >/dev/null 2>&1; then
   echo -e "${RED}✗ pre-push: bats is not installed — cannot verify tests.${NC}" >&2
   echo -e "  Install it (e.g. ${BOLD}brew install bats-core${NC}) or bypass with ${BOLD}git push --no-verify${NC}." >&2
