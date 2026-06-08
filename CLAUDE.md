@@ -29,6 +29,7 @@ During early development, manual testing in the real `$HOME` destroyed a user's 
 
 ```
 claude-profile              # Entrypoint: source modules + dispatch commands
+VERSION                     # Single source of truth for the release version
 lib/
   config.sh                 # Constants, XDG path resolution, seed defaults
   output.sh                 # Colors, info/ok/warn/err helpers
@@ -58,6 +59,7 @@ completions/
 - **The original backup (`.pre-profiles-backup/`) is never modified** after creation. It's the safety net.
 - **Profiles are stored in XDG-compliant location** (`~/.local/share/claude-profile/`), separate from `~/.claude/`.
 - **`~/.claude.json`** lives in `$HOME`, not inside `~/.claude/`. It is stored as `.claude.json` inside profile directories.
+- **The top-level `VERSION` file is the version source of truth**. `lib/config.sh` reads it at runtime; installers and Homebrew formulas must ship it with the runtime files.
 
 ### Full-directory snapshots
 
@@ -232,7 +234,7 @@ isn't installed rather than silently letting an unverified push through.
 
 ## Releasing
 
-Version is defined in `VERSION`. `lib/config.sh` reads that file at runtime. When creating a new release, **always keep the file version, git tag, and Homebrew formula in sync**:
+Version is defined in the top-level `VERSION` file. This is the best-fit convention for this Bash CLI: it avoids hard-coding the release in shell source and avoids implying a Node/npm package with `package.json`. `lib/config.sh` reads `VERSION` at runtime. When creating a new release, **always keep the file version, git tag, and Homebrew formula in sync**:
 
 1. Update `VERSION`
 2. Commit the change
@@ -245,7 +247,8 @@ Version is defined in `VERSION`. `lib/config.sh` reads that file at runtime. Whe
 6. Update the Homebrew tap formula (`url` and `sha256`) in `yarikleto/homebrew-claude-profile`:
    ```bash
    cd "$(brew --repository)/Library/Taps/yarikleto/homebrew-claude-profile"
-   # Edit Formula/claude-profile.rb — update url and sha256
+   # Edit Formula/claude-profile.rb — update url and sha256.
+   # Keep: libexec.install "lib", "commands", "VERSION"
    git add Formula/claude-profile.rb && git commit -m "Update to vX.Y.Z" && git push
    ```
 
