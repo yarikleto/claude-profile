@@ -57,7 +57,7 @@ class ClaudeProfile < Formula
 
   def install
     # Install supporting modules to libexec (Homebrew's private dir for the formula)
-    libexec.install "lib", "commands"
+    libexec.install "lib", "commands", "VERSION"
 
     # Install main script and patch SCRIPT_DIR to find modules in libexec
     bin.install "claude-profile"
@@ -129,11 +129,11 @@ claude-profile version   # should print "claude-profile 0.1.0"
 
 ## Releasing a new version
 
-1. Update `VERSION` in `lib/config.sh` to match the new tag.
+1. Update `VERSION` to match the new tag.
 
 2. Commit, tag, and push in the main repo:
    ```bash
-   git add lib/config.sh
+   git add VERSION
    git commit -m "Bump version to 0.2.0"
    git tag v0.2.0
    git push origin main --tags
@@ -145,8 +145,9 @@ claude-profile version   # should print "claude-profile 0.1.0"
      | shasum -a 256
    ```
 
-4. Update the formula in the tap repo — change `url` and `sha256`:
+4. Update the formula in the tap repo — make sure `VERSION` is installed and change `url` and `sha256`:
    ```ruby
+   libexec.install "lib", "commands", "VERSION"
    url "https://github.com/yarikleto/claude-profile/archive/refs/tags/v0.2.0.tar.gz"
    sha256 "NEW_SHA256_HERE"
    ```

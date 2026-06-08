@@ -1,6 +1,18 @@
 # config.sh — Constants and path resolution
 
-VERSION="2.0.3"
+VERSION_FILE="${CLAUDE_PROFILE_VERSION_FILE:-${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/VERSION}"
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "claude-profile: missing VERSION at $VERSION_FILE" >&2
+  exit 1
+fi
+
+VERSION="$(sed -n '1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}' "$VERSION_FILE")"
+if [[ -z "$VERSION" ]]; then
+  echo "claude-profile: missing version in $VERSION_FILE" >&2
+  exit 1
+fi
+unset VERSION_FILE
+
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 
 # Storage location: CLAUDE_PROFILE_HOME > XDG_DATA_HOME/claude-profile > ~/.local/share/claude-profile
@@ -31,4 +43,3 @@ GITIGNORE_CONTENT="/projects
 /tasks
 /plugins
 /history.jsonl"
-

@@ -36,6 +36,7 @@ setup() {
   [ -f "$lib/commands/info.sh" ]
   [ -f "$lib/commands/history.sh" ]
   [ -f "$lib/commands/ui.sh" ]
+  [ -f "$lib/VERSION" ]
 }
 
 @test "installed binary works" {
@@ -47,7 +48,9 @@ setup() {
 
   run bash "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile" version
   [ "$status" -eq 0 ]
-  [[ "$output" == *"claude-profile"* ]]
+  local expected
+  expected="$(sed -n '1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}' "$REPO_DIR/VERSION")"
+  [ "$output" = "claude-profile $expected" ]
 }
 
 @test "installed binary can create and use profiles" {

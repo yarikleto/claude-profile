@@ -28,6 +28,7 @@ INSTALL_LIB="$INSTALL_DIR/claude-profile-lib"
 mkdir -p "$INSTALL_DIR" "$INSTALL_LIB/lib" "$INSTALL_LIB/commands"
 
 cp "$SCRIPT_DIR/claude-profile" "$INSTALL_DIR/claude-profile"
+cp "$SCRIPT_DIR/VERSION" "$INSTALL_LIB/VERSION"
 cp "$SCRIPT_DIR"/lib/*.sh "$INSTALL_LIB/lib/"
 cp "$SCRIPT_DIR"/commands/*.sh "$INSTALL_LIB/commands/"
 chmod +x "$INSTALL_DIR/claude-profile"

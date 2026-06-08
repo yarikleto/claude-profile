@@ -232,9 +232,9 @@ isn't installed rather than silently letting an unverified push through.
 
 ## Releasing
 
-Version is defined in `lib/config.sh` as `VERSION="X.Y.Z"`. When creating a new release, **always keep the VERSION variable, git tag, and Homebrew formula in sync**:
+Version is defined in `VERSION`. `lib/config.sh` reads that file at runtime. When creating a new release, **always keep the file version, git tag, and Homebrew formula in sync**:
 
-1. Update `VERSION` in `lib/config.sh`
+1. Update `VERSION`
 2. Commit the change
 3. Tag with the matching version: `git tag vX.Y.Z`
 4. Push both: `git push origin main --tags`

@@ -191,6 +191,7 @@ After this: live files are untouched, `.current` is gone. Claude Code sees norma
 
 Defines constants and path resolution:
 
+- `VERSION` — read from the top-level `VERSION` file
 - `PROFILES_DIR` — resolved via `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME` > default
 - `CLAUDE_DIR` — `${CLAUDE_CODE_HOME:-$HOME/.claude}`
 - `SEED_NAMES` / `SEED_CONTENTS` — fallback seed templates
@@ -283,10 +284,10 @@ Test files map to source structure:
 
 ## Releasing
 
-1. Update `VERSION` in `lib/config.sh`
+1. Update `VERSION`
 2. Commit
 3. `git tag vX.Y.Z`
 4. `git push origin main --tags`
 5. Update homebrew formula SHA in `yarikleto/homebrew-claude-profile`
 
-The VERSION variable and git tag must always match.
+The VERSION file and git tag must always match.
