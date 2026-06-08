@@ -63,7 +63,7 @@ cmd_fork() {
 
   set_current "$name"
   ok "Created and activated $(_pname "$name")"
-  _show_summary "$profile_dir"
+  _show_profile_summary "$name"
 }
 
 cmd_use() {
@@ -101,7 +101,7 @@ cmd_use() {
 
   set_current "$name"
   ok "Active profile: $(_pname "$name")"
-  _show_summary "$profile_dir"
+  _show_profile_summary "$name"
 }
 
 cmd_save() {

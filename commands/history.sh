@@ -41,7 +41,6 @@ cmd_diff() {
 
 _snapshot_live_for_diff() {
   local dst="$1"
-  # Copy all CLAUDE_DIR contents
   local f
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
@@ -50,13 +49,93 @@ _snapshot_live_for_diff() {
       continue
     fi
     if [[ -e "$f" ]]; then
-      cp -RH "$f" "$dst/$base" || return 1
+      cp -RL "$f" "$dst/$base" || return 1
     fi
   done
-  # Special: copy ~/.claude.json
   if [[ -e "$HOME/.claude.json" ]]; then
-    cp -RH "$HOME/.claude.json" "$dst/.claude.json" || return 1
+    cp -L "$HOME/.claude.json" "$dst/.claude.json" || return 1
   fi
+}
+
+_clear_diff_worktree() {
+  local repo="$1"
+  local f
+  for f in "$repo"/* "$repo"/.*; do
+    local base
+    base="$(basename "$f")"
+    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" ]]; then
+      continue
+    fi
+    rm -rf "$f"
+  done
+}
+
+_prepare_diff_baseline_repo() {
+  local profile_dir="$1" repo="$2"
+  local ignore_content=""
+
+  if [[ -f "$profile_dir/.gitignore" ]]; then
+    ignore_content="$(cat "$profile_dir/.gitignore")"
+  fi
+
+  if git -C "$profile_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
+    git -C "$profile_dir" archive HEAD | tar -x -f - -C "$repo" || return 1
+    if [[ -z "$ignore_content" && -f "$repo/.gitignore" ]]; then
+      ignore_content="$(cat "$repo/.gitignore")"
+    fi
+  fi
+
+  git -C "$repo" init -q || return 1
+  if [[ -n "$ignore_content" ]]; then
+    printf '%s\n' "$ignore_content" >> "$repo/.git/info/exclude"
+  fi
+  rm -f "$repo/.gitignore"
+  git -C "$repo" add -A -- . || return 1
+  git -C "$repo" commit -q -m "Diff baseline" --allow-empty || return 1
+}
+
+_diff_git_status() {
+  local repo="$1"
+  git -C "$repo" status --porcelain --untracked-files=all -- . ':!.gitignore' \
+    | sed 's/^/  /'
+}
+
+_print_diff_changes() {
+  local changes="$1"
+  if [[ -n "$changes" ]]; then
+    echo "$changes"
+  else
+    echo -e "  ${DIM}(no changes)${NC}"
+  fi
+}
+
+# Status of live files against the active profile's committed baseline.
+# Rebuilds the baseline in $repo, overlays the live snapshot, then diffs —
+# this catches deletions that comparing against the thin profile dir misses.
+_active_diff_status() {
+  local profile_dir="$1" repo="$2"
+  mkdir -p "$repo" || return 1
+  _prepare_diff_baseline_repo "$profile_dir" "$repo" || return 1
+  _clear_diff_worktree "$repo" || return 1
+  _snapshot_live_for_diff "$repo" || return 1
+  _diff_git_status "$repo"
+}
+
+_diff_active_unsaved() {
+  local profile_dir="$1"
+  local tmp changes rc=0
+  tmp="$(mktemp -d)" || return 1
+
+  changes="$(_active_diff_status "$profile_dir" "$tmp/repo")" || rc=$?
+  rm -rf "$tmp"
+  [[ "$rc" -eq 0 ]] || return "$rc"
+
+  _print_diff_changes "$changes"
+}
+
+_diff_profile_unsaved() {
+  local profile_dir="$1"
+  _print_diff_changes "$(_diff_git_status "$profile_dir")"
 }
 
 _diff_unsaved() {
@@ -64,32 +143,10 @@ _diff_unsaved() {
   echo -e "${CYAN}${BOLD}Unsaved changes: $name${NC}"
   echo ""
 
-  local tmp
-  tmp="$(mktemp -d)" || return 1
-  trap "rm -rf '$tmp'" EXIT
-  if ! _snapshot_live_for_diff "$tmp"; then
-    rm -rf "$tmp"
-    return 1
-  fi
-
-  local diff_args
-  diff_args=(-rq "$profile_dir" "$tmp" --exclude=.git --exclude=.gitignore)
-
-  local changes diff_status=0
-  if ! changes="$(diff "${diff_args[@]}" 2>/dev/null \
-    | sed "s|$profile_dir|profile|g; s|$tmp|current|g")"; then
-    diff_status=$?
-    if [[ $diff_status -gt 1 ]]; then
-      rm -rf "$tmp"
-      return "$diff_status"
-    fi
-  fi
-  rm -rf "$tmp"
-
-  if [[ -n "$changes" ]]; then
-    echo "$changes"
+  if [[ "$(get_current)" == "$name" ]]; then
+    _diff_active_unsaved "$profile_dir"
   else
-    echo -e "  ${DIM}(no changes)${NC}"
+    _diff_profile_unsaved "$profile_dir"
   fi
 }
 
