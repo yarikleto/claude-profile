@@ -448,3 +448,96 @@ JSON
   [ ! -L "$CLAUDE_CODE_HOME/agents" ]
   grep -q "agent content" "$CLAUDE_CODE_HOME/agents/payload.md"
 }
+
+# ─── User-managed ~/.claude/.git is not ingested into profiles ──
+
+@test "fork: does not ingest a user-managed ~/.claude/.git" {
+  # User version-controls their own ~/.claude/ (a normal dotfiles practice)
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  run_cli_ok fork myprofile
+
+  # The profile must get its OWN baseline commit, not the user's history
+  local log
+  log="$(git -C "$(profile_dir myprofile)" log --oneline)"
+  [[ "$log" == *"Profile created"* ]]
+  [[ "$log" != *"my personal config"* ]]
+}
+
+@test "fork: profile keeps the static .gitignore even when ~/.claude has a .git" {
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  run_cli_ok fork myprofile
+
+  # The static .gitignore must be present so large data dirs stay untracked
+  [ -f "$(profile_dir myprofile)/.gitignore" ]
+  grep -q '/projects' "$(profile_dir myprofile)/.gitignore"
+}
+
+@test "save: does not overwrite the profile's own .git with a live ~/.claude/.git" {
+  run_cli_ok fork myprofile
+  run_cli_ok use myprofile
+
+  # User starts version-controlling their live ~/.claude/ AFTER activating
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  # Change a tracked file and save
+  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "x"
+
+  # The profile's own baseline history must survive (not be clobbered)
+  local log
+  log="$(git -C "$(profile_dir myprofile)" log --oneline)"
+  [[ "$log" == *"Profile created"* ]]
+  [[ "$log" != *"my personal config"* ]]
+}
+
+# ─── User-managed ~/.claude/.git survives the load path (switch/restore) ──
+
+@test "use: preserves a user-managed ~/.claude/.git across a profile switch" {
+  # User version-controls their own ~/.claude/ (a normal dotfiles practice)
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  # Two profiles so `use` performs a REAL switch: fork sets the active
+  # profile, so after forking both, profB is active and `use profA` is a
+  # genuine profB→profA switch that runs the load path's clear loop.
+  run_cli_ok fork profA
+  run_cli_ok fork profB
+  run_cli_ok use profA
+
+  # The user's repo must still live in ~/.claude/ and be untouched — the
+  # switch must neither delete it nor replace it with tool history.
+  [ -d "$CLAUDE_CODE_HOME/.git" ]
+  local log
+  log="$(git -C "$CLAUDE_CODE_HOME" log --oneline)"
+  [[ "$log" == *"my personal config"* ]]
+  [[ "$log" != *"Profile created"* ]]
+}
+
+@test "deactivate: preserves a user-managed ~/.claude/.git" {
+  run_cli_ok fork myprofile
+  run_cli_ok use myprofile
+
+  # User starts version-controlling their live ~/.claude/ AFTER activating
+  git -C "$CLAUDE_CODE_HOME" init -q
+  git -C "$CLAUDE_CODE_HOME" add -A
+  git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
+
+  run_cli_ok deactivate
+
+  # deactivate restores the pre-profiles backup; the user's own repo (added
+  # later, living in ~/.claude/) must survive that restore, not be wiped.
+  [ -d "$CLAUDE_CODE_HOME/.git" ]
+  local log
+  log="$(git -C "$CLAUDE_CODE_HOME" log --oneline)"
+  [[ "$log" == *"my personal config"* ]]
+  [[ "$log" != *"Profile created"* ]]
+}
