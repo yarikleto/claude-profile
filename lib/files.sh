@@ -218,7 +218,6 @@ _restore_from_backup() {
   _load_profile_to_live "$backup_dir"
 }
 
-# Print one summary row.
 _show_summary_item() {
   local path="$1" label="$2"
   if [[ -d "$path" ]]; then

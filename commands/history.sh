@@ -41,7 +41,6 @@ cmd_diff() {
 
 _snapshot_live_for_diff() {
   local dst="$1"
-  # Copy all CLAUDE_DIR contents
   local f
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
@@ -53,9 +52,8 @@ _snapshot_live_for_diff() {
       cp -RL "$f" "$dst/$base" || return 1
     fi
   done
-  # Special: copy ~/.claude.json
   if [[ -e "$HOME/.claude.json" ]]; then
-    cp -RL "$HOME/.claude.json" "$dst/.claude.json" || return 1
+    cp -L "$HOME/.claude.json" "$dst/.claude.json" || return 1
   fi
 }
 
@@ -93,10 +91,7 @@ _prepare_diff_baseline_repo() {
   fi
   rm -f "$repo/.gitignore"
   git -C "$repo" add -A -- . || return 1
-  git -C "$repo" \
-    -c user.name=claude-profile \
-    -c user.email=claude-profile@example.invalid \
-    commit -q -m "Diff baseline" --allow-empty || return 1
+  git -C "$repo" commit -q -m "Diff baseline" --allow-empty || return 1
 }
 
 _diff_git_status() {
@@ -105,31 +100,8 @@ _diff_git_status() {
     | sed 's/^/  /'
 }
 
-_diff_active_unsaved() {
-  local profile_dir="$1"
-  local tmp repo changes
-  tmp="$(mktemp -d)" || return 1
-  trap "rm -rf '$tmp'" EXIT
-
-  repo="$tmp/repo"
-  mkdir -p "$repo"
-  if ! _prepare_diff_baseline_repo "$profile_dir" "$repo"; then
-    rm -rf "$tmp"
-    return 1
-  fi
-
-  _clear_diff_worktree "$repo"
-  if ! _snapshot_live_for_diff "$repo"; then
-    rm -rf "$tmp"
-    return 1
-  fi
-
-  changes="$(_diff_git_status "$repo")" || {
-    rm -rf "$tmp"
-    return 1
-  }
-  rm -rf "$tmp"
-
+_print_diff_changes() {
+  local changes="$1"
   if [[ -n "$changes" ]]; then
     echo "$changes"
   else
@@ -137,15 +109,33 @@ _diff_active_unsaved() {
   fi
 }
 
+# Status of live files against the active profile's committed baseline.
+# Rebuilds the baseline in $repo, overlays the live snapshot, then diffs —
+# this catches deletions that comparing against the thin profile dir misses.
+_active_diff_status() {
+  local profile_dir="$1" repo="$2"
+  mkdir -p "$repo" || return 1
+  _prepare_diff_baseline_repo "$profile_dir" "$repo" || return 1
+  _clear_diff_worktree "$repo" || return 1
+  _snapshot_live_for_diff "$repo" || return 1
+  _diff_git_status "$repo"
+}
+
+_diff_active_unsaved() {
+  local profile_dir="$1"
+  local tmp changes rc=0
+  tmp="$(mktemp -d)" || return 1
+
+  changes="$(_active_diff_status "$profile_dir" "$tmp/repo")" || rc=$?
+  rm -rf "$tmp"
+  [[ "$rc" -eq 0 ]] || return "$rc"
+
+  _print_diff_changes "$changes"
+}
+
 _diff_profile_unsaved() {
   local profile_dir="$1"
-  local changes
-  changes="$(_diff_git_status "$profile_dir")" || return 1
-  if [[ -n "$changes" ]]; then
-    echo "$changes"
-  else
-    echo -e "  ${DIM}(no changes)${NC}"
-  fi
+  _print_diff_changes "$(_diff_git_status "$profile_dir")"
 }
 
 _diff_unsaved() {
