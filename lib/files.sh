@@ -1,5 +1,21 @@
 # files.sh — Full-directory operations between live ~/.claude/ and profile directories
 
+# Directory entries the tool never copies, moves, or deletes when syncing
+# between live ~/.claude/ and profile dirs:
+#   .  ..            directory self / parent
+#   .git .gitignore  git metadata. Profile dirs carry the tool's OWN (written
+#                    by _git_init); any .git/.gitignore in live ~/.claude/ is
+#                    the USER's, left wholly untouched — never ingested into a
+#                    profile, never clobbered, never deleted.
+# To skip another entry everywhere, add one pattern below; every copy/move/
+# clear/summary loop runs through this predicate.
+_skip_entry() {
+  case "$1" in
+    . | .. | .git | .gitignore) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Seed a new (empty) profile with template files.
 # Uses $PROFILES_DIR/.seed/ if it exists, otherwise falls back to built-in defaults.
 _seed_profile() {
@@ -10,7 +26,7 @@ _seed_profile() {
     for f in "$seed_dir"/* "$seed_dir"/.*; do
       local base
       base="$(basename "$f")"
-      if [[ "$base" == "." || "$base" == ".." ]]; then
+      if _skip_entry "$base"; then
         continue
       fi
       if [[ -e "$f" ]]; then
@@ -40,9 +56,7 @@ _snapshot_current() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    # Skip a user-managed .git/.gitignore — the tool manages its own in
-    # profile dirs and must never ingest the user's repository history.
-    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
+    if _skip_entry "$base"; then
       continue
     fi
     if [[ -e "$f" ]]; then
@@ -66,9 +80,7 @@ _save_current_to() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    # Skip a user-managed .git/.gitignore in live ~/.claude/ so we neither
-    # ingest the user's repo nor clobber the profile's own .git/.gitignore.
-    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
+    if _skip_entry "$base"; then
       continue
     fi
     if [[ -e "$f" ]]; then
@@ -129,7 +141,7 @@ _validate_profile_for_load() {
   for f in "$profile_dir"/* "$profile_dir"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
+    if _skip_entry "$base"; then
       continue
     fi
     if [[ -L "$f" ]]; then
@@ -172,7 +184,7 @@ _load_profile_to_live() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." ]]; then
+    if _skip_entry "$base"; then
       continue
     fi
     if [[ -L "$f" || -e "$f" ]]; then
@@ -188,7 +200,7 @@ _load_profile_to_live() {
   for f in "$profile_dir"/* "$profile_dir"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
+    if _skip_entry "$base"; then
       continue
     fi
     # Handle .claude.json specially — goes to $HOME/.claude.json
@@ -240,7 +252,7 @@ _show_summary() {
   for f in "$dir"/* "$dir"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
+    if _skip_entry "$base"; then
       continue
     fi
     _show_summary_item "$f" "$base"
@@ -254,7 +266,7 @@ _show_live_summary() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." || "$base" == ".git" || "$base" == ".gitignore" ]]; then
+    if _skip_entry "$base"; then
       continue
     fi
     _show_summary_item "$f" "$base"
