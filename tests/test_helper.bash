@@ -9,6 +9,20 @@
 
 CLAUDE_PROFILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/claude-profile"
 
+# Fully isolate tests from the caller's git environment — done at load time so
+# it covers EVERY test file, including the ones that define their own setup()
+# and never call the shared one (install.bats, uninstall.bats).
+#
+# When bats is launched from a git hook (e.g. pre-push), git exports GIT_DIR,
+# GIT_INDEX_FILE and friends. Left in place, a test's `git commit` would write
+# to the caller's repo instead of the isolated HOME — this once landed fixture
+# commits on a real branch. `git rev-parse --local-env-vars` is git's own
+# authoritative list of repository-local variables, so this stays correct as
+# git evolves; the *_CONFIG_* vars are added so `git config --global` always
+# targets the isolated HOME.
+unset $(git rev-parse --local-env-vars 2>/dev/null) \
+      GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM 2>/dev/null || true
+
 setup() {
   # Isolated home per test
   export HOME="$BATS_TEST_TMPDIR/home"

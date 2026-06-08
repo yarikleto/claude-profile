@@ -98,3 +98,20 @@ load test_helper
   [[ "$HOME" == *"bats"* ]] || [[ "$HOME" == */tmp/* ]]
   [[ "$CLAUDE_CODE_HOME" == *"bats"* ]] || [[ "$CLAUDE_CODE_HOME" == */tmp/* ]]
 }
+
+@test "isolation: tests are immune to an ambient GIT_DIR" {
+  # A git hook (e.g. the pre-push hook) runs with GIT_DIR/GIT_INDEX_FILE
+  # exported. If those leaked into a test, its `git commit`s would write to
+  # the caller's repo instead of the isolated HOME — which once corrupted a
+  # real branch. test_helper.bash scrubs the inherited git environment at
+  # load time so this holds for every test.
+  [ -z "${GIT_DIR:-}" ]
+  [ -z "${GIT_WORK_TREE:-}" ]
+  [ -z "${GIT_INDEX_FILE:-}" ]
+
+  # Behavioural guard: the tool's git operations must land inside the isolated
+  # profiles dir, never in some ambient repo.
+  run_cli_ok fork probe
+  [ -d "$(profile_dir probe)/.git" ]
+  git -C "$(profile_dir probe)" rev-parse --absolute-git-dir | grep -q "$BATS_TEST_TMPDIR"
+}
