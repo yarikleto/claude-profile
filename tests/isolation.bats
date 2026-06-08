@@ -113,5 +113,5 @@ load test_helper
   # profiles dir, never in some ambient repo.
   run_cli_ok fork probe
   [ -d "$(profile_dir probe)/.git" ]
-  git -C "$(profile_dir probe)" rev-parse --absolute-git-dir | grep -q "$BATS_TEST_TMPDIR"
+  git -C "$(profile_dir probe)" rev-parse --absolute-git-dir | grep -qF "$BATS_TEST_TMPDIR"
 }
