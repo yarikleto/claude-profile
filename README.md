@@ -66,6 +66,28 @@ cd claude-profile && git pull && bash install.sh
 
 Your profiles and config are never touched — updates only replace the CLI binary and modules.
 
+### Uninstall
+
+Deactivate profiles first if you want to restore your original Claude Code config:
+
+```bash
+claude-profile deactivate        # or: claude-profile deactivate --keep
+```
+
+Then remove the CLI:
+
+```bash
+# Homebrew
+brew uninstall claude-profile
+
+# From source
+bash uninstall.sh
+```
+
+Profiles are kept in `~/.local/share/claude-profile/`. Remove that directory only if you also want to delete all saved profile data.
+
+See the full [uninstall guide](docs/uninstall.md) for manual cleanup and custom install locations.
+
 ## Quick start
 
 ```bash
