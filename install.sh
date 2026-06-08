@@ -189,7 +189,7 @@ fi
 "$INSTALL_DIR/claude-profile" statusline install
 
 # ─── Check PATH ─────────────────────────────────────────────
-if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
+if ! echo "$PATH" | tr ':' '\n' | grep -Fqx "$INSTALL_DIR"; then
   echo ""
   echo -e "${BOLD}Add to your PATH:${NC}"
   echo ""
