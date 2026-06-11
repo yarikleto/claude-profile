@@ -5,7 +5,7 @@
 <br>
 
 [![Tests](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml/badge.svg)](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml)
-[![CLI version](https://img.shields.io/github/v/release/yarikleto/claude-profile?label=CLI&color=18182f)](https://github.com/yarikleto/claude-profile/releases/latest)
+[![CLI version](https://img.shields.io/github/v/tag/yarikleto/claude-profile?label=CLI&sort=semver&filter=v*&color=18182f)](https://github.com/yarikleto/claude-profile/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Shell: Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnubash&logoColor=white)](claude-profile)
 [![Tests: bats](https://img.shields.io/badge/Tests-bats--core-yellow)](tests/)
