@@ -125,6 +125,24 @@ deactivate              Restore original state, turn off profiles
 deactivate --keep       Detach from profiles, keep current config
 ```
 
+### Deactivating and coming back
+
+Two ways out:
+
+```bash
+claude-profile deactivate         # restore your original pre-profiles config
+claude-profile deactivate --keep  # detach, keep the current profile's files live
+```
+
+Both save the active profile first. `deactivate` returns you to the config you had before you first ran `fork`/`new`. `--keep` leaves your files exactly as they are — Claude Code sees a normal config, and your profiles stay saved on disk. This is the path for [migrating to native profiles](#migrating-to-native-claude-code-profiles), or for pausing the tool without changing anything.
+
+While detached, nothing auto-saves your changes — so if your live config isn't saved in any profile, `use` and `new` stop and ask you to decide:
+
+```bash
+claude-profile fork my-setup      # keep it: save as a new profile (re-attaches you)
+claude-profile use work --force   # drop it: switch and discard the detached changes
+```
+
 ### Version history
 
 Every profile has built-in git history. Each save is a commit.

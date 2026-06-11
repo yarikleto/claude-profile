@@ -127,7 +127,7 @@ Creates a clean empty profile.
 
 ```
 1. _ensure_original_backup()
-2. _guard_detached_live_state()  ← refuse if unsaved live state would be wiped
+2. _guard_detached_live_state()  ← refuse if the live state isn't saved anywhere
 3. Auto-save current profile     ← --move (since we're switching away)
 4. mkdir profile dir
 5. _seed_profile()               ← copy from .seed/ or built-in defaults
@@ -141,7 +141,7 @@ Creates a clean empty profile.
 The core operation. Uses `--move` for speed.
 
 ```
-1. _guard_detached_live_state()         ← refuse if unsaved live state would be wiped
+1. _guard_detached_live_state()         ← refuse if the live state isn't saved anywhere
 2. _validate_profile_for_load(target)   ← pre-check before destructive ops
 3. _save_current_to(current, --move)
    ├── mv all items: ~/.claude/ → current profile dir
@@ -236,7 +236,7 @@ Git operations for version history:
 Core operations: `new`, `fork`, `use`, `save`, `deactivate`. All follow the same pattern:
 1. Validate input
 2. Ensure backup exists
-3. Guard: refuse if unsaved live state would be wiped (`use`/`new`)
+3. Guard: refuse if the live state isn't saved anywhere (`use`/`new`)
 4. Auto-save current profile if needed
 5. Perform the operation
 6. Update `.current`
@@ -255,7 +255,7 @@ Created once by `_backup_raw_state()` on first `fork` or `new`. Never modified a
 
 Every operation that changes the active profile (`use`, `new`, `deactivate`) saves the current profile first. The user never loses unsaved changes.
 
-When nothing would auto-save the live state — no profile is current (detached after `deactivate`), or `.current` names a profile dir that no longer exists — `use` and `new` refuse instead of wiping it (`_guard_detached_live_state` in `commands/profile.sh`). They proceed only with `--force`, when the live state is empty, when it is byte-identical to the original backup, or when the backup was created by that very command (first run — the fresh backup captures the live state). `fork <name>` is the rescue path: it preserves the detached live state as a profile and re-attaches.
+When nothing would auto-save the live state — no profile is current (detached after `deactivate`), or `.current` names a profile dir that no longer exists — `use` and `new` refuse to proceed (`_guard_detached_live_state` in `commands/profile.sh`). They go ahead only with `--force`, when the live state is empty, when it is byte-identical to the original backup, or when the backup was created by that very command (first run — the fresh backup captures the live state). `fork <name>` preserves a detached live state as a profile and re-attaches.
 
 ### Pre-validation before destructive switch
 

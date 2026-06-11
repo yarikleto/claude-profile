@@ -37,7 +37,15 @@ After running it:
 
 ## If you change your mind
 
-While detached, nothing auto-saves your live config. If you run `claude-profile use` or `new` again, they refuse rather than silently overwrite anything you changed since detaching. Run `claude-profile fork <name>` to save your current config as a new profile (this re-attaches you), or re-run with `--force` to discard the detached changes.
+While detached, nothing auto-saves your live config, so `use` and `new` stop and ask you to decide:
+
+```bash
+# Keep what you have now — save it as a new profile (this re-attaches you)
+claude-profile fork back-from-native
+
+# Or switch anyway, discarding what changed while detached
+claude-profile use work --force
+```
 
 ## What `deactivate` (without --keep) does
 
