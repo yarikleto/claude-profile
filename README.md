@@ -113,9 +113,9 @@ Profiles are stored in `~/.local/share/claude-profile/` (XDG-compliant), separat
 ## Commands
 
 ```
-new <name>              Create a clean empty profile and activate it
+new <name> [--force]    Create a clean empty profile and activate it
 fork <name>             Copy current state into a new profile
-use <name>              Switch to a profile (auto-saves current)
+use <name> [--force]    Switch to a profile (auto-saves current)
 list                    List all profiles, highlight active
 current                 Print active profile name
 show [name]             Show profile contents
@@ -123,6 +123,24 @@ edit [name]             Open profile directory in editor
 delete <name> [-f]      Delete a profile
 deactivate              Restore original state, turn off profiles
 deactivate --keep       Detach from profiles, keep current config
+```
+
+### Deactivating and coming back
+
+Two ways out:
+
+```bash
+claude-profile deactivate         # restore your original pre-profiles config
+claude-profile deactivate --keep  # detach, keep the current profile's files live
+```
+
+Both save the active profile first. `deactivate` returns you to the config you had before you first ran `fork`/`new`. `--keep` leaves your files exactly as they are — Claude Code sees a normal config, and your profiles stay saved on disk. This is the path for [migrating to native profiles](#migrating-to-native-claude-code-profiles), or for pausing the tool without changing anything.
+
+While detached, nothing auto-saves your changes — so if your live config isn't saved in any profile, `use` and `new` stop and ask you to decide:
+
+```bash
+claude-profile fork my-setup      # keep it: save as a new profile (re-attaches you)
+claude-profile use work --force   # drop it: switch and discard the detached changes
 ```
 
 ### Version history
@@ -159,6 +177,7 @@ This is configured during installation. If you already have a custom `statusLine
 
 - **Original backup** — your pre-profiles config is backed up on first use and **never modified** by any operation. It's your safety net.
 - **Auto-save on switch** — `use` saves the current profile before switching. No changes are lost.
+- **No silent overwrite when unsaved** — when no profile would auto-save your live config (after `deactivate`, or if the active profile's directory is missing), `use` and `new` refuse to wipe it. Run `claude-profile fork <name>` to preserve it as a profile, or re-run with `--force` to discard it.
 - **Full isolation** — each profile is an independent copy. Changing one never affects another.
 - **Clean exit** — `deactivate` restores your original state. `deactivate --keep` keeps your current config for [migration](#migrating-to-native-claude-code-profiles).
 
@@ -183,6 +202,8 @@ rm -rf ~/.local/share/claude-profile
 ```
 
 `--keep` saves your profile, clears the active marker, and leaves all your files in place — Claude Code sees normal config. Without `--keep`, `deactivate` restores your original pre-profiles config.
+
+While detached, your live config isn't saved in any profile — so if you change your mind and run `use` or `new`, they refuse rather than overwrite it. `fork <name>` re-attaches and preserves it; `--force` discards it.
 
 See the full [migration guide](docs/migration.md) for details and troubleshooting.
 

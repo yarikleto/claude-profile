@@ -77,7 +77,7 @@ Priority: `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME/claude-profile` > `$HOME/.local
 
 ### deactivate --keep
 
-`deactivate --keep` detaches from profiles without restoring the backup — the user's current config stays as-is. This is the migration path for when native profiles arrive. Regular `deactivate` restores from `.pre-profiles-backup/`.
+`deactivate --keep` detaches from profiles without restoring the backup — the user's current config stays as-is. This is the migration path for when native profiles arrive. Regular `deactivate` restores from `.pre-profiles-backup/`. While detached, `use`/`new` refuse to overwrite a live config that isn't saved in any profile — `fork` preserves it, `--force` discards it.
 
 ## Development workflow — TDD
 

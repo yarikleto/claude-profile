@@ -43,9 +43,10 @@ ${CYAN}${BOLD}USAGE${NC}
   claude-profile ${DIM}<command> [options]${NC}
 
 ${CYAN}${BOLD}COMMANDS${NC}
-  ${BOLD}new${NC} ${DIM}<name>${NC}                    Create a clean empty profile
+  ${BOLD}new${NC} ${DIM}<name> [--force]${NC}          Create a clean empty profile
   ${BOLD}fork${NC} ${DIM}<name>${NC}                   Copy current state into a new profile
-  ${BOLD}use${NC} ${DIM}<name>${NC}                    Switch to a profile
+  ${BOLD}use${NC} ${DIM}<name> [--force]${NC}          Switch to a profile
+                                  ${DIM}--force: discard unsaved detached config${NC}
   ${BOLD}list${NC}                          List all profiles
   ${BOLD}current${NC}                       Show active profile name
   ${BOLD}show${NC} ${DIM}[name]${NC}                   Show profile contents

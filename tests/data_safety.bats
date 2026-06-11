@@ -125,6 +125,215 @@ load test_helper
   ! grep -q "server-b" "$HOME/.claude.json"
 }
 
+# ─── Detached live state is never silently destroyed ─────
+# After `deactivate` / `deactivate --keep` no profile is current, so the
+# auto-save in use/new is skipped. Config created while detached must not
+# be wiped: use/new must refuse (pointing at `fork` and `--force`) unless
+# --force is given or there is nothing in the live state to lose.
+
+@test "use: refuses to overwrite detached live state after deactivate --keep" {
+  run_cli_ok fork keeper
+  run_cli_ok fork target
+  run_cli_ok use keeper
+  run_cli_ok deactivate --keep
+
+  # Config created while detached — no profile will auto-save it
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  echo '{"mcpServers": {"precious-server": {"type": "http"}}}' > "$HOME/.claude.json"
+
+  run_cli use target
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fork"* ]]
+  [[ "$output" == *"--force"* ]]
+
+  # Live state must be completely untouched
+  [ -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+  grep -q "irreplaceable" "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  grep -q "precious-server" "$HOME/.claude.json"
+}
+
+@test "use --force: discards detached live state and switches" {
+  run_cli_ok fork keeper
+  run_cli_ok fork target
+  # target is active after fork — give it a distinctive marker
+  echo '{"target_marker": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok use keeper
+  run_cli_ok deactivate --keep
+
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  echo '{"mcpServers": {"precious-server": {"type": "http"}}}' > "$HOME/.claude.json"
+
+  run_cli_ok use --force target
+
+  # target's content is live; the detached data was knowingly discarded
+  grep -q '"target_marker"' "$CLAUDE_CODE_HOME/settings.json"
+  [ ! -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+  ! grep -q "precious-server" "$HOME/.claude.json"
+}
+
+@test "use: refuses to overwrite detached live state after regular deactivate" {
+  run_cli_ok fork myprofile
+  run_cli_ok use myprofile
+  run_cli_ok deactivate
+
+  # New config created on top of the restored original
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  echo '{"mcpServers": {"precious-server": {"type": "http"}}}' > "$HOME/.claude.json"
+
+  run_cli use myprofile
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fork"* ]]
+  [[ "$output" == *"--force"* ]]
+  [ -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+  grep -q "irreplaceable" "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  grep -q "precious-server" "$HOME/.claude.json"
+}
+
+@test "new: refuses to overwrite detached live state" {
+  run_cli_ok fork myprofile
+  run_cli_ok deactivate --keep
+
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  echo '{"mcpServers": {"precious-server": {"type": "http"}}}' > "$HOME/.claude.json"
+
+  run_cli new fresh
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fork"* ]]
+  [[ "$output" == *"--force"* ]]
+  [ -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+  grep -q "irreplaceable" "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  grep -q "precious-server" "$HOME/.claude.json"
+}
+
+@test "new --force: discards detached live state and activates seeded profile" {
+  run_cli_ok fork myprofile
+  run_cli_ok deactivate --keep
+
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  echo '{"mcpServers": {"precious-server": {"type": "http"}}}' > "$HOME/.claude.json"
+
+  run_cli_ok new --force fresh
+
+  # Seeded clean config is live; the detached data was knowingly discarded
+  [ -f "$CLAUDE_CODE_HOME/settings.json" ]
+  [[ "$(cat "$HOME/.claude.json")" == "{}" ]]
+  [ ! -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+}
+
+@test "fork rescues detached live state, then plain use preserves it in the rescue profile" {
+  run_cli_ok fork original
+  run_cli_ok deactivate --keep
+
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+  echo '{"mcpServers": {"precious-server": {"type": "http"}}}' > "$HOME/.claude.json"
+
+  # fork is the advertised rescue path: it captures live state AND re-attaches
+  run_cli_ok fork rescued
+  # ...so a plain switch needs no --force and auto-saves into the rescue profile
+  run_cli_ok use original
+
+  [ -f "$(profile_dir rescued)/skills/precious/SKILL.md" ]
+  grep -q "irreplaceable" "$(profile_dir rescued)/skills/precious/SKILL.md"
+  grep -q "precious-server" "$(profile_dir rescued)/.claude.json"
+}
+
+@test "use: proceeds without --force when detached live state is empty" {
+  run_cli_ok fork myprofile
+  run_cli_ok deactivate --keep
+
+  # Nothing to lose: no ~/.claude.json, ~/.claude/ has only .git/.gitignore
+  rm -f "$HOME/.claude.json"
+  find "$CLAUDE_CODE_HOME" -mindepth 1 -maxdepth 1 \
+    ! -name .git ! -name .gitignore -exec rm -rf {} +
+
+  run_cli_ok use myprofile
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
+# A valid .current can also point at a profile dir that no longer exists
+# (removed manually or lost in a sync). The auto-save silently does nothing
+# then — exactly like the detached case, so the same guard must apply.
+
+@test "use: refuses when .current names a missing profile dir" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  run_cli_ok use alpha
+  rm -rf "$(profile_dir alpha)"
+
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+
+  run_cli use beta
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--force"* ]]
+  [ -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+  grep -q "github" "$HOME/.claude.json"
+}
+
+@test "new: refuses when .current names a missing profile dir" {
+  run_cli_ok fork alpha
+  rm -rf "$(profile_dir alpha)"
+
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+
+  run_cli new fresh
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--force"* ]]
+  [ -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+}
+
+@test "use --force: proceeds when .current names a missing profile dir" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  run_cli_ok use alpha
+  rm -rf "$(profile_dir alpha)"
+
+  mkdir -p "$CLAUDE_CODE_HOME/skills/precious"
+  echo "irreplaceable" > "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
+
+  run_cli_ok use --force beta
+  [ ! -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
+@test "use --force: still auto-saves when a profile is active" {
+  run_cli_ok fork keeper
+  run_cli_ok fork target
+  run_cli_ok use keeper
+  echo '{"keeper_change": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  # --force only bypasses the detached guard — never the auto-save
+  run_cli_ok use --force target
+  grep -q '"keeper_change"' "$(profile_dir keeper)/settings.json"
+}
+
+@test "use: proceeds without --force when detached live equals the backup" {
+  run_cli_ok fork myprofile
+  run_cli_ok deactivate --keep
+
+  # Nothing changed since first activation: live == original backup,
+  # so a load destroys nothing the backup doesn't already preserve.
+  run_cli_ok use myprofile
+}
+
+@test "use: refuses when detached live differs from backup by one modified file" {
+  run_cli_ok fork myprofile
+  run_cli_ok deactivate --keep
+  echo '{"tweaked": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli use myprofile
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--force"* ]]
+  grep -q '"tweaked"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
 # ─── Directory contents preserved through cycles ─────────
 
 @test "skills directory contents survive fork-use-save-switch-use cycle" {

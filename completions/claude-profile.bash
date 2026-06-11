@@ -26,12 +26,27 @@ _claude_profile_completions() {
   fi
 
   case "${COMP_WORDS[1]}" in
-    use|switch|edit|show|info|delete|rm|save|history|log|diff|restore)
+    use|switch)
+      # --force only once a dash is typed; profiles otherwise (also after --force)
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--force" -- "$cur"))
+      elif [[ ${COMP_CWORD} -eq 2 || "$prev" == "--force" ]]; then
+        COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
+      fi
+      ;;
+    edit|show|info|delete|rm|save|history|log|diff|restore)
       if [[ ${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
       fi
       ;;
-    new|fork)
+    new)
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--force" -- "$cur"))
+      else
+        COMPREPLY=()  # free-form name
+      fi
+      ;;
+    fork)
       COMPREPLY=()  # free-form name
       ;;
     statusline)
