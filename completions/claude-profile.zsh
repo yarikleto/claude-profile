@@ -42,10 +42,20 @@ _claude-profile() {
     _describe 'command' commands
   elif (( CURRENT == 3 )); then
     case "${words[2]}" in
-      use|switch|edit|show|info|delete|rm|save|history|log|diff|restore)
+      use|switch)
+        local -a flags=('--force:Discard unsaved detached config')
+        _describe 'option' flags
         _claude_profile_profiles
         ;;
-      new|fork)
+      edit|show|info|delete|rm|save|history|log|diff|restore)
+        _claude_profile_profiles
+        ;;
+      new)
+        local -a flags=('--force:Discard unsaved detached config')
+        _describe 'option' flags
+        _message 'profile name'
+        ;;
+      fork)
         _message 'profile name'
         ;;
       statusline)
@@ -55,7 +65,10 @@ _claude-profile() {
     esac
   elif (( CURRENT >= 4 )); then
     case "${words[2]}" in
-      # no further completions needed for new/fork
+      use|switch)
+        # --force may precede the name — keep offering profiles
+        _claude_profile_profiles
+        ;;
     esac
   fi
 }

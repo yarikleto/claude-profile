@@ -16,6 +16,69 @@ _skip_entry() {
   esac
 }
 
+# True (0) when the live state holds anything a load would destroy:
+# ~/.claude.json exists, or live ~/.claude/ contains any entry (dotfiles
+# included) other than the skipped git metadata.
+_live_state_nonempty() {
+  if [[ -e "$HOME/.claude.json" ]]; then
+    return 0
+  fi
+  local f
+  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
+    local base
+    base="$(basename "$f")"
+    if _skip_entry "$base"; then
+      continue
+    fi
+    if [[ -L "$f" || -e "$f" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# True (0) when the live state is byte-identical to a profile-shaped directory
+# (live ~/.claude/ entries minus skipped git metadata, plus ~/.claude.json as
+# the directory's .claude.json). A live state that already exists elsewhere is
+# safe to replace.
+_live_state_equals_dir() {
+  local dir="$1"
+  local f base
+  # Every live entry must have an identical counterpart in $dir
+  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
+    base="$(basename "$f")"
+    if _skip_entry "$base"; then
+      continue
+    fi
+    if [[ ! -L "$f" && ! -e "$f" ]]; then
+      continue
+    fi
+    if ! diff -rq "$f" "$dir/$base" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+  # Entries only in $dir mean the live state lost something — not identical
+  for f in "$dir"/* "$dir"/.*; do
+    base="$(basename "$f")"
+    if _skip_entry "$base" || [[ "$base" == ".claude.json" ]]; then
+      continue
+    fi
+    if [[ ! -L "$f" && ! -e "$f" ]]; then
+      continue
+    fi
+    if [[ ! -e "$CLAUDE_DIR/$base" ]]; then
+      return 1
+    fi
+  done
+  # Special: ~/.claude.json lives outside CLAUDE_DIR — compare it explicitly
+  if [[ -e "$HOME/.claude.json" || -e "$dir/.claude.json" ]]; then
+    if ! diff -q "$HOME/.claude.json" "$dir/.claude.json" >/dev/null 2>&1; then
+      return 1
+    fi
+  fi
+  return 0
+}
+
 # Seed a new (empty) profile with template files.
 # Uses $PROFILES_DIR/.seed/ if it exists, otherwise falls back to built-in defaults.
 _seed_profile() {

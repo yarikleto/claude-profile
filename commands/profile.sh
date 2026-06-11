@@ -1,8 +1,55 @@
 # profile.sh — Core profile operations: new, fork, use, save, deactivate
 
+# Guard for use/new: when the auto-save will not run — no profile is current
+# (detached after deactivate), or .current names a profile dir that no longer
+# exists — loading a profile would destroy live config that is not saved in
+# any profile. Refuse unless --force was given, the live state is empty, the
+# original backup didn't pre-exist (a backup created by this very command
+# captures the live state, so first runs proceed without friction), or the
+# live state is byte-identical to the original backup (e.g. right after a
+# first-command `save` or an untouched deactivate).
+_guard_detached_live_state() {
+  local current="$1" force="$2" backup_preexisted="$3"
+  # Attached counts only when the auto-save will actually run — mirror its
+  # condition exactly: a dangling .current saves nothing.
+  if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    return 0
+  fi
+  if [[ "$force" == true || "$backup_preexisted" != true ]]; then
+    return 0
+  fi
+  if ! _live_state_nonempty; then
+    return 0
+  fi
+  if _live_state_equals_dir "$PROFILES_DIR/.pre-profiles-backup"; then
+    return 0
+  fi
+  if [[ -n "$current" ]]; then
+    err "Active profile '$(_pname "$current")' is missing — your live config is not saved in any profile"
+  else
+    err "No active profile — your current live config is not saved in any profile"
+  fi
+  info "Run 'claude-profile fork <name>' to preserve it as a new profile,"
+  info "or re-run with --force to discard it."
+  exit 1
+}
+
 cmd_new() {
-  local name="${1:-}"
-  _require_profile_name "$name" "claude-profile new <name>"
+  local name="" force=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force) force=true; shift ;;
+      *)       name="$1"; shift ;;
+    esac
+  done
+  _require_profile_name "$name" "claude-profile new <name> [--force]"
+
+  # Capture before _ensure_original_backup — a pre-existing backup does NOT
+  # cover config created later, so it can't justify wiping the live state.
+  local backup_preexisted=false
+  if [[ -d "$PROFILES_DIR/.pre-profiles-backup" ]]; then
+    backup_preexisted=true
+  fi
   _ensure_original_backup
 
   local profile_dir="$PROFILES_DIR/$name"
@@ -13,6 +60,7 @@ cmd_new() {
   # Auto-save current profile before switching
   local current
   current="$(get_current_validated)"
+  _guard_detached_live_state "$current" "$force" "$backup_preexisted"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move
@@ -67,8 +115,14 @@ cmd_fork() {
 }
 
 cmd_use() {
-  local name="${1:-}"
-  _require_profile_name "$name" "claude-profile use <name>"
+  local name="" force=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force) force=true; shift ;;
+      *)       name="$1"; shift ;;
+    esac
+  done
+  _require_profile_name "$name" "claude-profile use <name> [--force]"
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ ! -d "$profile_dir" ]]; then
@@ -85,7 +139,15 @@ cmd_use() {
     return
   fi
 
+  # Capture before _ensure_original_backup — a pre-existing backup does NOT
+  # cover config created later, so it can't justify wiping the live state.
+  local backup_preexisted=false
+  if [[ -d "$PROFILES_DIR/.pre-profiles-backup" ]]; then
+    backup_preexisted=true
+  fi
   _ensure_original_backup
+
+  _guard_detached_live_state "$current" "$force" "$backup_preexisted"
 
   # Pre-validate target profile before any destructive operations
   _validate_profile_for_load "$profile_dir" || exit 1
