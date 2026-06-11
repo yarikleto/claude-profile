@@ -35,6 +35,10 @@ After running it:
 - `~/.claude.json` — your current profile's MCP servers (unchanged)
 - `~/.local/share/claude-profile/` — all saved profiles (can be deleted or kept for reference)
 
+## If you change your mind
+
+While detached, nothing auto-saves your live config. If you run `claude-profile use` or `new` again, they refuse rather than silently overwrite anything you changed since detaching. Run `claude-profile fork <name>` to save your current config as a new profile (this re-attaches you), or re-run with `--force` to discard the detached changes.
+
 ## What `deactivate` (without --keep) does
 
 Restores the backup taken when you first ran `fork` or `new`. Use this if you want to go back to your original config from before you started using profiles.

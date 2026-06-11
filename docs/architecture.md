@@ -127,12 +127,13 @@ Creates a clean empty profile.
 
 ```
 1. _ensure_original_backup()
-2. Auto-save current profile     ← --move (since we're switching away)
-3. mkdir profile dir
-4. _seed_profile()               ← copy from .seed/ or built-in defaults
-5. _git_init()
-6. _load_profile_to_live()       ← cp from profile to live
-7. set_current()
+2. _guard_detached_live_state()  ← refuse if unsaved live state would be wiped
+3. Auto-save current profile     ← --move (since we're switching away)
+4. mkdir profile dir
+5. _seed_profile()               ← copy from .seed/ or built-in defaults
+6. _git_init()
+7. _load_profile_to_live()       ← cp from profile to live
+8. set_current()
 ```
 
 ### `use <name>` (switch)
@@ -140,16 +141,17 @@ Creates a clean empty profile.
 The core operation. Uses `--move` for speed.
 
 ```
-1. _validate_profile_for_load(target)   ← pre-check before destructive ops
-2. _save_current_to(current, --move)
+1. _guard_detached_live_state()         ← refuse if unsaved live state would be wiped
+2. _validate_profile_for_load(target)   ← pre-check before destructive ops
+3. _save_current_to(current, --move)
    ├── mv all items: ~/.claude/ → current profile dir
    ├── cp ~/.claude.json → current profile dir
    └── git commit
-3. _load_profile_to_live(new, --move)
+4. _load_profile_to_live(new, --move)
    ├── clear ~/.claude/
    ├── mv items: new profile dir → ~/.claude/
    ├── cp .claude.json → ~/.claude.json
-4. set_current(new)
+5. set_current(new)
 ```
 
 ### `save [-m msg]`
@@ -183,7 +185,7 @@ Detaches without restoring backup. Migration path for native profiles.
 2. clear_current()
 ```
 
-After this: live files are untouched, `.current` is gone. Claude Code sees normal config.
+After this: live files are untouched, `.current` is gone. Claude Code sees normal config. Re-entering later with `use`/`new` is guarded — see "Auto-save before switch" under Safety design.
 
 ## Key modules
 
@@ -206,6 +208,8 @@ All file operations. **Commands never copy/move files directly.**
 | `_seed_profile` | `new` | Copy .seed/ or defaults to profile |
 | `_snapshot_current` | `fork`, backup | cp ~/.claude/ + ~/.claude.json to dst |
 | `_save_current_to` | `use`, `save`, `deactivate` | cp/mv ~/.claude/ to dst + git commit |
+| `_live_state_nonempty` | `use`, `new` (guard) | Anything unsaved to lose in the live state? |
+| `_live_state_equals_dir` | `use`, `new` (guard) | Byte-compare live state to a profile-shaped dir |
 | `_validate_profile_for_load` | `use` | Pre-check safety before destructive ops |
 | `_load_profile_to_live` | `use`, `new`, `restore` | cp/mv profile to ~/.claude/ |
 | `_restore_from_backup` | `deactivate` | Load from .pre-profiles-backup |
@@ -232,9 +236,10 @@ Git operations for version history:
 Core operations: `new`, `fork`, `use`, `save`, `deactivate`. All follow the same pattern:
 1. Validate input
 2. Ensure backup exists
-3. Auto-save current profile if needed
-4. Perform the operation
-5. Update `.current`
+3. Guard: refuse if unsaved live state would be wiped (`use`/`new`)
+4. Auto-save current profile if needed
+5. Perform the operation
+6. Update `.current`
 
 ### `commands/ui.sh`
 
@@ -249,6 +254,8 @@ Created once by `_backup_raw_state()` on first `fork` or `new`. Never modified a
 ### Auto-save before switch
 
 Every operation that changes the active profile (`use`, `new`, `deactivate`) saves the current profile first. The user never loses unsaved changes.
+
+When nothing would auto-save the live state — no profile is current (detached after `deactivate`), or `.current` names a profile dir that no longer exists — `use` and `new` refuse instead of wiping it (`_guard_detached_live_state` in `commands/profile.sh`). They proceed only with `--force`, when the live state is empty, when it is byte-identical to the original backup, or when the backup was created by that very command (first run — the fresh backup captures the live state). `fork <name>` is the rescue path: it preserves the detached live state as a profile and re-attaches.
 
 ### Pre-validation before destructive switch
 
