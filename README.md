@@ -24,9 +24,6 @@ Define each as a profile, switch with one command.
 
 The source is the product: you can read the entrypoint, `lib/`, `commands/`, and install scripts before installing, or ask any code review tool to inspect them. For the most cautious path, clone the repository, review the source, then run `bash install.sh` from that reviewed checkout.
 
-> **This tool manages global (user-level) profiles** — it switches your entire `~/.claude/` directory and `~/.claude.json`.
-> If you need **project-level profiles** (per-repo settings), see [claude-project-profile](https://github.com/yarikleto/claude-project-profile).
-
 ```bash
 $ claude-profile fork default          # save your current setup
 $ claude-profile new code-review       # create a new profile
