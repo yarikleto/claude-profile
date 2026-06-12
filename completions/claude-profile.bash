@@ -49,6 +49,11 @@ _claude_profile_completions() {
     fork)
       COMPREPLY=()  # free-form name
       ;;
+    deactivate|off)
+      if [[ "$cur" == -* || ${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=($(compgen -W "--keep" -- "$cur"))
+      fi
+      ;;
     statusline)
       if [[ ${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "install uninstall" -- "$cur"))

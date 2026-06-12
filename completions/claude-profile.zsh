@@ -58,6 +58,12 @@ _claude-profile() {
       fork)
         _message 'profile name'
         ;;
+      deactivate|off)
+        local -a flags=(
+          '--keep:Detach without restoring backup'
+        )
+        _describe 'option' flags
+        ;;
       statusline)
         local -a actions=('install:Install status line script' 'uninstall:Remove status line script')
         _describe 'action' actions

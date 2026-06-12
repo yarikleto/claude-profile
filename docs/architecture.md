@@ -69,7 +69,7 @@ Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 ├── .seed/                                  # templates for `new` (user-editable)
 │   ├── settings.json
 │   └── .claude.json
-├── .pre-profiles-backup/                   # original state, NEVER modified
+├── .pre-profiles-backup/                   # original state backup
 │   ├── settings.json
 │   ├── CLAUDE.md
 │   ├── projects/
@@ -171,9 +171,12 @@ Restores original state from backup.
 
 ```
 1. Verify backup exists
-2. _save_current_to(current, --move)    ← save profile one last time
-3. _restore_from_backup()               ← cp from .pre-profiles-backup to live
-4. clear_current()
+2. If a profile is active:
+   └── _save_current_to(current, --move)       ← save profile one last time
+3. If detached live state differs from backup:
+   └── _snapshot_current(detached-...) + _git_init(detached-...)
+4. _restore_from_backup()                      ← cp from .pre-profiles-backup to live
+5. clear_current()
 ```
 
 ### `deactivate --keep`
@@ -249,13 +252,13 @@ Statusline integration. Creates `statusline.sh` which reads JSON from stdin (Cla
 
 ### Original backup
 
-Created once by `_backup_raw_state()` on first `fork` or `new`. Never modified after creation. Contains the full snapshot of `~/.claude/` + `~/.claude.json`. This is the "factory reset" — `deactivate` restores from here.
+Created once by `_backup_raw_state()` on first `fork` or `new`. Normal profile operations do not overwrite or delete it. Contains the full snapshot of `~/.claude/` + `~/.claude.json`. This is the "factory reset" — `deactivate` restores from here.
 
 ### Auto-save before switch
 
 Every operation that changes the active profile (`use`, `new`, `deactivate`) saves the current profile first. The user never loses unsaved changes.
 
-When nothing would auto-save the live state — no profile is current (detached after `deactivate`), or `.current` names a profile dir that no longer exists — `use` and `new` refuse to proceed (`_guard_detached_live_state` in `commands/profile.sh`). They go ahead only with `--force`, when the live state is empty, when it is byte-identical to the original backup, or when the backup was created by that very command (first run — the fresh backup captures the live state). `fork <name>` preserves a detached live state as a profile and re-attaches.
+When nothing would auto-save the live state — no profile is current (detached after `deactivate`), or `.current` names a profile dir that no longer exists — `use` and `new` refuse to proceed (`_guard_detached_live_state` in `commands/profile.sh`). They go ahead only with `--force`, when the live state is empty, when it is byte-identical to the original backup, or when the backup was created by that very command (first run — the fresh backup captures the live state). `fork <name>` preserves a detached live state as a profile and re-attaches. Plain `deactivate` preserves detached live state automatically as a generated `detached-...` profile before restoring the original backup.
 
 ### Pre-validation before destructive switch
 
