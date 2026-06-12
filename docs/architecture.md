@@ -173,7 +173,8 @@ Restores original state from backup.
 1. Verify backup exists
 2. If a profile is active:
    └── _save_current_to(current, --move)       ← save profile one last time
-3. If detached live state differs from backup:
+3. If detached live state is non-empty, differs from the backup,
+   and isn't saved in any profile:
    └── _snapshot_current(detached-...) + _git_init(detached-...)
 4. _restore_from_backup()                      ← cp from .pre-profiles-backup to live
 5. clear_current()
@@ -209,10 +210,10 @@ All file operations. **Commands never copy/move files directly.**
 | Function | Used by | Behavior |
 |----------|---------|----------|
 | `_seed_profile` | `new` | Copy .seed/ or defaults to profile |
-| `_snapshot_current` | `fork`, backup | cp ~/.claude/ + ~/.claude.json to dst |
+| `_snapshot_current` | `fork`, `deactivate`, backup | cp ~/.claude/ + ~/.claude.json to dst |
 | `_save_current_to` | `use`, `save`, `deactivate` | cp/mv ~/.claude/ to dst + git commit |
-| `_live_state_nonempty` | `use`, `new` (guard) | Anything unsaved to lose in the live state? |
-| `_live_state_equals_dir` | `use`, `new` (guard) | Byte-compare live state to a profile-shaped dir |
+| `_live_state_nonempty` | `use`, `new` (guard), `deactivate` | Anything unsaved to lose in the live state? |
+| `_live_state_equals_dir` | `use`, `new` (guard), `deactivate` | Byte-compare live state to a profile-shaped dir |
 | `_validate_profile_for_load` | `use` | Pre-check safety before destructive ops |
 | `_load_profile_to_live` | `use`, `new`, `restore` | cp/mv profile to ~/.claude/ |
 | `_restore_from_backup` | `deactivate` | Load from .pre-profiles-backup |
@@ -268,7 +269,7 @@ When nothing would auto-save the live state — no profile is current (detached 
 
 - `_load_profile_to_live` skips symlinks in profile dirs (`! -L` check)
 - `_validate_profile_for_load` rejects nested symlinks inside directories
-- `_snapshot_current` follows symlinks at the source (user's live files are trusted) via `cp -RH`
+- `_snapshot_current` follows symlinks at the source (user's live files are trusted) via `cp -RL`
 - Profile name validation rejects `..`, `/`, leading `.` or `-`
 
 ## Testing
