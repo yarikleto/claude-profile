@@ -74,6 +74,15 @@ _run_bash_completion() {
   [[ "$output" == *"uninstall"* ]]
 }
 
+@test "bash completion: deactivate completes keep option" {
+  _run_bash_completion deactivate ""
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--keep"* ]]
+  [[ "$output" != *"--restore"* ]]
+  [[ "$output" != *"--force"* ]]
+  [[ "$output" != *"--save-as"* ]]
+}
+
 @test "bash completion: works with no profiles dir yet" {
   _run_bash_completion use ""
   [ "$status" -eq 0 ]

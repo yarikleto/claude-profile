@@ -2,7 +2,7 @@
 
 ## How it works
 
-Think of it like git branches. Your original `~/.claude/` state is the **main branch** — always preserved, never modified. Each profile is an independent **fork** you can change freely.
+Think of it like git branches. Your original `~/.claude/` state is the **main branch** — backed up once and preserved by normal profile operations. Each profile is an independent **fork** you can change freely.
 
 ```
 ~/.claude/                                  ← "live" location, what Claude Code reads
@@ -16,7 +16,7 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 ├── .current                                # tracks which profile is active
 ├── .seed/                                  # templates for `new` (user-editable)
 ├── statusline.sh                           # statusline script
-├── .pre-profiles-backup/                   # your original state (read-only)
+├── .pre-profiles-backup/                   # your original state backup
 ├── default/                                # profile with its own git history
 │   ├── .git/
 │   ├── settings.json

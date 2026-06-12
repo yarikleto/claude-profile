@@ -26,7 +26,7 @@ After this, your `~/.claude/` will look exactly as if you'd configured it manual
 2. **Clears** the active profile marker (`.current` file)
 3. **Does NOT** restore the original backup — your current config stays
 
-> **Your original backup is safe.** Neither `--keep` nor regular `deactivate` ever modifies the backup at `~/.local/share/claude-profile/.pre-profiles-backup/`. It is created once and never touched. You can always restore from it manually, even after migration.
+> **Your original backup is preserved by normal profile operations.** It lives at `$CLAUDE_PROFILE_HOME/.pre-profiles-backup/` when `CLAUDE_PROFILE_HOME` is set, otherwise `$XDG_DATA_HOME/claude-profile/.pre-profiles-backup/` when `XDG_DATA_HOME` is set, otherwise `~/.local/share/claude-profile/.pre-profiles-backup/`. You can restore from it while that directory still exists and is readable.
 
 After running it:
 - `~/.claude/settings.json` — your current profile's settings (unchanged)
@@ -37,7 +37,17 @@ After running it:
 
 ## If you change your mind
 
-While detached, nothing auto-saves your live config, so `use` and `new` stop and ask you to decide:
+While detached, nothing auto-saves your live config into the profile you detached from.
+
+To go back to the original pre-profiles config:
+
+```bash
+claude-profile deactivate
+```
+
+If your detached live config changed, `deactivate` saves it first as a generated `detached-...` profile, then restores the original backup.
+
+To re-attach the current live config as a named profile or switch to a saved profile:
 
 ```bash
 # Keep what you have now — save it as a new profile (this re-attaches you)

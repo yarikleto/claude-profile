@@ -4,13 +4,14 @@ There are three layers to remove: your Claude Code configuration (profiles data)
 
 ## Step 1: Restore your original Claude Code configuration
 
-If you have an active profile, deactivate it to restore your original `~/.claude/` state:
+Deactivate to restore your original `~/.claude/` state:
 
 ```bash
 claude-profile deactivate
 ```
 
 This saves the active profile, copies your original files back from the backup, and clears the active profile marker.
+If you already detached with `deactivate --keep`, the same command restores the original backup; if your detached live config changed, it is first saved as a generated `detached-...` profile.
 
 **If `claude-profile` is no longer installed**, restore manually:
 

@@ -46,6 +46,54 @@ load test_helper
   [[ "$output" == *"No profile is active"* ]]
 }
 
+@test "deactivate: detached with missing backup reports it instead of claiming no profile" {
+  run_cli_ok fork default
+  run_cli_ok deactivate --keep
+  rm -rf "$(backup_dir)"
+
+  run_cli deactivate
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"backup"* ]]
+  [[ "$output" != *"No profile is active"* ]]
+  # Live files untouched
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
+@test "deactivate: rejects unknown options" {
+  run_cli deactivate --restore
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Usage"* ]]
+}
+
+@test "deactivate: restores original after keep and saves detached changes" {
+  run_cli_ok fork default
+  run_cli_ok deactivate --keep
+
+  echo '{"detached": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok deactivate
+
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+  ! grep -q '"detached"' "$CLAUDE_CODE_HOME/settings.json"
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
+
+  local saved
+  saved="$(find "$CLAUDE_PROFILE_HOME" -mindepth 1 -maxdepth 1 -type d -name 'detached-*' | head -1)"
+  [ -n "$saved" ]
+  grep -q '"detached"' "$saved/settings.json"
+}
+
+@test "deactivate: after keep does not duplicate unchanged saved profile" {
+  run_cli_ok fork default
+  echo '{"saved": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok deactivate --keep
+
+  run_cli_ok deactivate
+
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
+  [ -z "$(find "$CLAUDE_PROFILE_HOME" -mindepth 1 -maxdepth 1 -type d -name 'detached-*')" ]
+}
+
 @test "restores MCP config" {
   run_cli_ok fork default
   run_cli_ok new nomcp

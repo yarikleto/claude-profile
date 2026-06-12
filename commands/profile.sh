@@ -185,19 +185,71 @@ cmd_save() {
   ok "Saved $(_pname "$name")"
 }
 
+_deactivate_usage() {
+  err "Usage: claude-profile deactivate [--keep]"
+}
+
+_next_detached_profile_name() {
+  local base name i
+  base="detached-$(date +%Y%m%d-%H%M%S)"
+  name="$base"
+  i=2
+  while [[ -d "$PROFILES_DIR/$name" ]]; do
+    name="$base-$i"
+    i=$((i + 1))
+  done
+  echo "$name"
+}
+
+_live_state_saved_in_any_profile() {
+  local dir base
+  for dir in "$PROFILES_DIR"/*; do
+    base="$(basename "$dir")"
+    if [[ "$base" == .* || ! -d "$dir" ]]; then
+      continue
+    fi
+    if _live_state_equals_dir "$dir"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+_any_profiles_exist() {
+  local dir base
+  for dir in "$PROFILES_DIR"/*; do
+    base="$(basename "$dir")"
+    if [[ "$base" == .* || ! -d "$dir" ]]; then
+      continue
+    fi
+    return 0
+  done
+  return 1
+}
+
 cmd_deactivate() {
   local keep=false
-  if [[ "${1:-}" == "--keep" ]]; then
-    keep=true
-  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --keep)
+        keep=true
+        shift
+        ;;
+      *)
+        _deactivate_usage
+        return 1
+        ;;
+    esac
+  done
 
   local current
   current="$(get_current_validated)"
-  if [[ -z "$current" ]]; then
-    warn "No profile is active"; return
-  fi
+  local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
 
   if [[ "$keep" == true ]]; then
+    if [[ -z "$current" ]]; then
+      warn "No profile is active"; return
+    fi
     # Keep current files in place — save a copy to profile, then detach
     info "Saving $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate --keep"
@@ -206,16 +258,38 @@ cmd_deactivate() {
     info "You can safely remove ${BOLD}$PROFILES_DIR${NC} when ready"
   else
     # Verify backup exists before doing destructive save
-    local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
     if [[ ! -d "$backup_dir" ]]; then
-      err "Original backup not found — refusing to restore (would destroy live files)"
-      return 1
+      if [[ -n "$current" ]]; then
+        err "Original backup not found — refusing to restore (would destroy live files)"
+        return 1
+      fi
+      if _any_profiles_exist; then
+        err "Original backup not found — nothing to restore"
+        return 1
+      fi
+      warn "No profile is active"; return
     fi
-    info "Saving $(_pname "$current")..."
-    _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move
+
+    if [[ -n "$current" ]]; then
+      info "Saving $(_pname "$current")..."
+      _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move
+    elif _live_state_nonempty && ! _live_state_equals_dir "$backup_dir" && ! _live_state_saved_in_any_profile; then
+      local detached_name detached_dir
+      detached_name="$(_next_detached_profile_name)"
+      detached_dir="$PROFILES_DIR/$detached_name"
+      mkdir -p "$detached_dir"
+      info "Saving detached config as $(_pname "$detached_name")..."
+      _snapshot_current "$detached_dir"
+      _git_init "$detached_dir"
+    fi
+
     info "Restoring original state..."
     _restore_from_backup
     clear_current
-    ok "Deactivated $(_pname "$current"), restored original state"
+    if [[ -n "$current" ]]; then
+      ok "Deactivated $(_pname "$current"), restored original state"
+    else
+      ok "Restored original state"
+    fi
   fi
 }

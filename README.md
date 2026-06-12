@@ -106,7 +106,7 @@ claude-profile use experiment     # clean slate
 claude-profile use default        # back to your setup
 ```
 
-That's it. Your original config is automatically backed up and can be restored at any time with `claude-profile deactivate`.
+That's it. Your original config is automatically backed up and can be restored with `claude-profile deactivate`.
 
 ## What gets switched
 
@@ -138,7 +138,9 @@ claude-profile deactivate         # restore your original pre-profiles config
 claude-profile deactivate --keep  # detach, keep the current profile's files live
 ```
 
-Both save the active profile first. `deactivate` returns you to the config you had before you first ran `fork`/`new`. `--keep` leaves your files exactly as they are — Claude Code sees a normal config, and your profiles stay saved on disk. This is the path for [migrating to native profiles](#migrating-to-native-claude-code-profiles), or for pausing the tool without changing anything.
+Both are safe. `deactivate` returns you to the config you had before you first ran `fork`/`new`. If you already detached with `--keep`, running `deactivate` later still restores the original backup; if your detached live config has changed, it is first saved as a generated `detached-...` profile.
+
+`deactivate --keep` leaves your files exactly as they are — Claude Code sees a normal config, and your profiles stay saved on disk. This is the path for [migrating to native profiles](#migrating-to-native-claude-code-profiles), or for pausing the tool without changing anything.
 
 While detached, nothing auto-saves your changes — so if your live config isn't saved in any profile, `use` and `new` stop and ask you to decide:
 
@@ -179,13 +181,13 @@ This is configured during installation. If you already have a custom `statusLine
 
 ## Safety
 
-- **Original backup** — your pre-profiles config is backed up on first use and **never modified** by any operation. It's your safety net.
+- **Original backup** — your pre-profiles config is backed up once on first use. Normal profile operations do not overwrite or delete it, so it remains the safety net while the profiles data directory exists.
 - **Auto-save on switch** — `use` saves the current profile before switching. No changes are lost.
 - **No silent overwrite when unsaved** — when no profile would auto-save your live config (after `deactivate`, or if the active profile's directory is missing), `use` and `new` refuse to wipe it. Run `claude-profile fork <name>` to preserve it as a profile, or re-run with `--force` to discard it.
 - **Full isolation** — each profile is an independent copy. Changing one never affects another.
 - **Clean exit** — `deactivate` restores your original state. `deactivate --keep` keeps your current config for [migration](#migrating-to-native-claude-code-profiles).
 
-> **Your original backup is always safe.** It lives at `~/.local/share/claude-profile/.pre-profiles-backup/` and is never modified — not by `--keep`, not by regular `deactivate`, not by any profile operation. You can always restore from it manually.
+> **Your original backup is preserved by normal profile operations.** It lives at `$CLAUDE_PROFILE_HOME/.pre-profiles-backup/` when `CLAUDE_PROFILE_HOME` is set, otherwise `$XDG_DATA_HOME/claude-profile/.pre-profiles-backup/` when `XDG_DATA_HOME` is set, otherwise `~/.local/share/claude-profile/.pre-profiles-backup/`. `deactivate --keep` does not restore it; `deactivate` restores from it and refuses to proceed if it is missing. You can restore from it manually while that directory still exists and is readable.
 
 ## Migrating to native Claude Code profiles
 
@@ -206,6 +208,8 @@ rm -rf ~/.local/share/claude-profile
 ```
 
 `--keep` saves your profile, clears the active marker, and leaves all your files in place — Claude Code sees normal config. Without `--keep`, `deactivate` restores your original pre-profiles config.
+
+If you detach with `--keep` and later decide to go back to the original pre-profiles config, run `claude-profile deactivate`. If your detached live config changed, it is saved first as a generated `detached-...` profile.
 
 While detached, your live config isn't saved in any profile — so if you change your mind and run `use` or `new`, they refuse rather than overwrite it. `fork <name>` re-attaches and preserves it; `--force` discards it.
 

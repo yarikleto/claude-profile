@@ -56,7 +56,7 @@ completions/
 - **All file operations go through `lib/files.sh`**. Never copy/remove files directly in command files — use `_snapshot_current`, `_save_current_to`, `_load_profile_to_live`, `_restore_from_backup`, `_seed_profile`.
 - **All git operations go through `lib/git.sh`**. Never call `git` directly in command files — use `_git_init`, `_git_commit`, `_git_resolve_ref`.
 - **Profiles are independent copies, not symlinks**. Switching copies/moves the entire `~/.claude/` directory.
-- **The original backup (`.pre-profiles-backup/`) is never modified** after creation. It's the safety net.
+- **The original backup (`.pre-profiles-backup/`) is never overwritten or deleted by normal profile operations** after creation. It's the safety net.
 - **Profiles are stored in XDG-compliant location** (`~/.local/share/claude-profile/`), separate from `~/.claude/`.
 - **`~/.claude.json`** lives in `$HOME`, not inside `~/.claude/`. It is stored as `.claude.json` inside profile directories.
 - **The top-level `VERSION` file is the version source of truth**. `lib/config.sh` reads it at runtime; installers and Homebrew formulas must ship it with the runtime files.
@@ -75,9 +75,9 @@ Priority: `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME/claude-profile` > `$HOME/.local
 
 `new` creates profiles seeded from `.seed/` (user-editable). Falls back to built-in defaults in `SEED_NAMES`/`SEED_CONTENTS` (config.sh) if `.seed/` doesn't exist. `install.sh` creates `.seed/` with defaults.
 
-### deactivate --keep
+### deactivate / deactivate --keep
 
-`deactivate --keep` detaches from profiles without restoring the backup — the user's current config stays as-is. This is the migration path for when native profiles arrive. Regular `deactivate` restores from `.pre-profiles-backup/`. While detached, `use`/`new` refuse to overwrite a live config that isn't saved in any profile — `fork` preserves it, `--force` discards it.
+`deactivate --keep` detaches from profiles without restoring the backup — the user's current config stays as-is. This is the migration path for when native profiles arrive. Regular `deactivate` restores from `.pre-profiles-backup/`; it also works while detached (after `--keep`) — if the live config is non-empty, differs from the backup, and isn't saved in any profile, it is first preserved as a generated `detached-<timestamp>` profile. While detached, `use`/`new` refuse to overwrite a live config that isn't saved in any profile — `fork` preserves it, `--force` discards it.
 
 ## Development workflow — TDD
 
