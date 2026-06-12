@@ -215,6 +215,18 @@ _live_state_saved_in_any_profile() {
   return 1
 }
 
+_any_profiles_exist() {
+  local dir base
+  for dir in "$PROFILES_DIR"/*; do
+    base="$(basename "$dir")"
+    if [[ "$base" == .* || ! -d "$dir" ]]; then
+      continue
+    fi
+    return 0
+  done
+  return 1
+}
+
 cmd_deactivate() {
   local keep=false
   while [[ $# -gt 0 ]]; do
@@ -247,12 +259,15 @@ cmd_deactivate() {
   else
     # Verify backup exists before doing destructive save
     if [[ ! -d "$backup_dir" ]]; then
-      if [[ -z "$current" ]]; then
-        warn "No profile is active"; return
-      else
+      if [[ -n "$current" ]]; then
         err "Original backup not found — refusing to restore (would destroy live files)"
         return 1
       fi
+      if _any_profiles_exist; then
+        err "Original backup not found — nothing to restore"
+        return 1
+      fi
+      warn "No profile is active"; return
     fi
 
     if [[ -n "$current" ]]; then

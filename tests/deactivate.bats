@@ -46,6 +46,19 @@ load test_helper
   [[ "$output" == *"No profile is active"* ]]
 }
 
+@test "deactivate: detached with missing backup reports it instead of claiming no profile" {
+  run_cli_ok fork default
+  run_cli_ok deactivate --keep
+  rm -rf "$(backup_dir)"
+
+  run_cli deactivate
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"backup"* ]]
+  [[ "$output" != *"No profile is active"* ]]
+  # Live files untouched
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
 @test "deactivate: rejects unknown options" {
   run_cli deactivate --restore
   [ "$status" -ne 0 ]

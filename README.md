@@ -190,7 +190,7 @@ This is configured during installation. If you already have a custom `statusLine
 - **Full isolation** — each profile is an independent copy. Changing one never affects another.
 - **Clean exit** — `deactivate` restores your original state. `deactivate --keep` keeps your current config for [migration](#migrating-to-native-claude-code-profiles).
 
-> **Your original backup is preserved by normal profile operations.** It lives at `$CLAUDE_PROFILE_HOME/.pre-profiles-backup/` when `CLAUDE_PROFILE_HOME` is set, otherwise `$XDG_DATA_HOME/claude-profile/.pre-profiles-backup/` when `XDG_DATA_HOME` is set, otherwise `~/.local/share/claude-profile/.pre-profiles-backup/`. `deactivate --keep` does not restore it; `deactivate` restores from it and refuses to proceed if it is missing while a profile is active. You can restore from it manually while that directory still exists and is readable.
+> **Your original backup is preserved by normal profile operations.** It lives at `$CLAUDE_PROFILE_HOME/.pre-profiles-backup/` when `CLAUDE_PROFILE_HOME` is set, otherwise `$XDG_DATA_HOME/claude-profile/.pre-profiles-backup/` when `XDG_DATA_HOME` is set, otherwise `~/.local/share/claude-profile/.pre-profiles-backup/`. `deactivate --keep` does not restore it; `deactivate` restores from it and refuses to proceed if it is missing. You can restore from it manually while that directory still exists and is readable.
 
 ## Migrating to native Claude Code profiles
 
