@@ -4,7 +4,7 @@
 
 <br>
 
-[![Tests](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml/badge.svg)](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/yarikleto/claude-profile/tests.yml?branch=main&label=CI&logo=github&logoColor=white)](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml)
 [![Test count](https://img.shields.io/badge/tests-221%20passing-brightgreen?logo=github&logoColor=white)](tests/)
 [![CLI version](https://img.shields.io/github/v/tag/yarikleto/claude-profile?label=CLI&sort=semver&filter=v*&color=18182f)](https://github.com/yarikleto/claude-profile/tags)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)](#install)
