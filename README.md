@@ -5,10 +5,12 @@
 <br>
 
 [![Tests](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml/badge.svg)](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml)
+[![Test count](https://img.shields.io/badge/tests-221%20passing-brightgreen?logo=github&logoColor=white)](tests/)
 [![CLI version](https://img.shields.io/github/v/tag/yarikleto/claude-profile?label=CLI&sort=semver&filter=v*&color=18182f)](https://github.com/yarikleto/claude-profile/tags)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Shell: Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnubash&logoColor=white)](claude-profile)
-[![Tests: bats](https://img.shields.io/badge/Tests-bats--core-yellow)](tests/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)](#install)
+[![Shell: Bash](https://img.shields.io/badge/shell-Bash-4EAA25?logo=gnubash&logoColor=white)](claude-profile)
+[![Tested with bats](https://img.shields.io/badge/tested%20with-bats--core-yellow)](tests/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Different tasks need different setups. Code review needs read-only permissions and a careful persona.<br>
 Daily dev needs full access and speed. Learning needs explanatory output.<br>

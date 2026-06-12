@@ -40,3 +40,33 @@ jobs:
 
       - name: Run test suite
         run: bats tests/
+
+  # Keep the static "tests-N passing" badge in README.md honest by recounting
+  # @test cases after the suite goes green on main and committing back if the
+  # number drifted. Runs only on direct pushes to main (not PRs/forks).
+  badge:
+    name: update test-count badge
+    needs: bats
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Recount tests and update badge
+        run: |
+          count=$(grep -rh '^@test' tests/*.bats | wc -l | tr -d ' ')
+          echo "Test count: $count"
+          sed -i -E "s/tests-[0-9]+%20passing/tests-${count}%20passing/" README.md
+          if git diff --quiet README.md; then
+            echo "Badge already up to date."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "Update test-count badge to ${count} [skip ci]"
+            git push
+          fi
