@@ -44,16 +44,39 @@ clear_current() { rm -f "$CURRENT_FILE"; }
 # Concurrent invocations interleave rm/mv on the same live files; with --move
 # semantics that can destroy the sole copy of a profile's data.
 
-_release_lock() { rm -rf "$PROFILES_DIR/.lock"; }
+# A per-process ownership token, written into the lock when we claim it. Only
+# a matching token releases the lock — a process that lost a takeover race must
+# never delete the new owner's lock on EXIT.
+_LOCK_TOKEN=""
+
+_release_lock() {
+  local lock="$PROFILES_DIR/.lock"
+  if [[ -n "$_LOCK_TOKEN" && "$(cat "$lock/token" 2>/dev/null || true)" == "$_LOCK_TOKEN" ]]; then
+    rm -rf "$lock"
+  fi
+}
 
 _acquire_lock() {
   ensure_dir
   local lock="$PROFILES_DIR/.lock"
-  if ! mkdir "$lock" 2>/dev/null; then
+  _LOCK_TOKEN="$$-${RANDOM}${RANDOM}"
+
+  local attempt
+  for attempt in 1 2 3; do
+    if mkdir "$lock" 2>/dev/null; then
+      echo "$$" > "$lock/pid"
+      printf '%s\n' "$_LOCK_TOKEN" > "$lock/token"
+      trap _release_lock EXIT
+      trap 'exit 130' INT
+      trap 'exit 143' TERM
+      return 0
+    fi
+
+    # Lock exists — is its owner still alive?
     local pid
     pid="$(cat "$lock/pid" 2>/dev/null || true)"
     if [[ -z "$pid" ]]; then
-      # The other process may be between mkdir and writing its pid
+      # The owner may be between mkdir and writing its pid
       sleep 0.2
       pid="$(cat "$lock/pid" 2>/dev/null || true)"
     fi
@@ -62,17 +85,31 @@ _acquire_lock() {
       err "If that is wrong, remove $lock"
       exit 1
     fi
-    # Stale lock from a dead process — take it over
-    rm -rf "$lock"
-    if ! mkdir "$lock" 2>/dev/null; then
-      err "Another claude-profile operation is in progress"
-      exit 1
+
+    # Stale lock from a dead owner. Claim the takeover atomically: rename the
+    # exact stale directory aside. `rename` on a single source succeeds for
+    # only one racer, so two contenders can't both clear the same lock and
+    # proceed. If our rename lost (another racer already took over, or the
+    # owner revived and the lock is now a live one), fall through to retry —
+    # the next mkdir fails and the liveness check reports "in progress".
+    local stash="$lock.stale.$$.$attempt"
+    if mv "$lock" "$stash" 2>/dev/null; then
+      # Guard the exotic case where we grabbed a *fresh* lock from a racer that
+      # already took over: if its owner is alive, restore it and stand down.
+      local spid
+      spid="$(cat "$stash/pid" 2>/dev/null || true)"
+      if [[ "$spid" =~ ^[0-9]+$ ]] && kill -0 "$spid" 2>/dev/null; then
+        mv "$stash" "$lock" 2>/dev/null || rm -rf "$stash"
+        err "Another claude-profile operation is in progress"
+        exit 1
+      fi
+      rm -rf "$stash"
     fi
-  fi
-  echo "$$" > "$lock/pid"
-  trap _release_lock EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
+    # loop and retry mkdir
+  done
+
+  err "Another claude-profile operation is in progress"
+  exit 1
 }
 
 # ─── Interrupted-operation marker ────────────────────────────
