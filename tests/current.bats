@@ -14,3 +14,13 @@ load test_helper
   [ "$status" -eq 0 ]
   [[ "$output" == "default" ]]
 }
+
+@test "current: corrupt .current fails cleanly without echoing raw bytes" {
+  mkdir -p "$CLAUDE_PROFILE_HOME"
+  printf '../evil\033]0;pwned\007' > "$CLAUDE_PROFILE_HOME/.current"
+
+  run_cli current
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"corrupt"* ]] || [[ "$output" == *"invalid"* ]]
+  [[ "$output" != *$'\033'* ]]
+}

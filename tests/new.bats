@@ -26,6 +26,14 @@ load test_helper
   [[ "$output" == *"Usage"* ]]
 }
 
+@test "rejects unexpected extra argument" {
+  run_cli new first second
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected argument"* ]]
+  [ ! -d "$(profile_dir first)" ]
+  [ ! -d "$(profile_dir second)" ]
+}
+
 @test "uses custom .seed/ directory when present" {
   mkdir -p "$CLAUDE_PROFILE_HOME/.seed"
   echo '{"custom": true}' > "$CLAUDE_PROFILE_HOME/.seed/settings.json"

@@ -3,6 +3,7 @@
 cmd_history() {
   local name="${1:-$(get_current)}"
   _require_profile_name "$name" "claude-profile history [name]"
+  _require_profile_exists "$name"
 
   local profile_dir="$PROFILES_DIR/$name"
   if [[ ! -d "$profile_dir/.git" ]]; then
@@ -16,13 +17,23 @@ cmd_history() {
 
 cmd_diff() {
   local name="" ref=""
-  for arg in "$@"; do
-    if [[ -d "$PROFILES_DIR/$arg" ]]; then
-      name="$arg"
+  if [[ $# -gt 2 ]]; then
+    err "Usage: claude-profile diff [name] [commit|date]"
+    exit 1
+  fi
+  if [[ $# -eq 2 ]]; then
+    # Two args are positional: <name> <ref> — never silently demote a
+    # misspelled profile name to a ref
+    name="$1" ref="$2"
+    _validate_profile_name "$name"
+    _require_profile_exists "$name"
+  elif [[ $# -eq 1 ]]; then
+    if [[ -d "$PROFILES_DIR/$1" ]]; then
+      name="$1"
     else
-      ref="$arg"
+      ref="$1"
     fi
-  done
+  fi
 
   name="${name:-$(get_current)}"
   _require_profile_name "$name" "claude-profile diff [name] [commit|date]"
@@ -45,7 +56,9 @@ _snapshot_live_for_diff() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if [[ "$base" == "." || "$base" == ".." ]]; then
+    # The user's live .git/.gitignore must not be ingested — a live
+    # .gitignore's rules would hide untracked changes from the diff
+    if _skip_entry "$base"; then
       continue
     fi
     if [[ -e "$f" ]]; then
@@ -163,20 +176,28 @@ _diff_since_ref() {
 }
 
 cmd_restore() {
-  local name="" ref=""
+  local name="" ref="" arg
   for arg in "$@"; do
     if [[ "$arg" =~ [/[:cntrl:]] || "$arg" == .* || "$arg" == -* ]]; then
       err "Invalid profile name '$arg' (must start with alphanumeric, no slashes or dots)"
       exit 1
     fi
-    if [[ -d "$PROFILES_DIR/$arg" ]]; then
-      name="$arg"
-    else
-      ref="$arg"
-    fi
   done
+  if [[ $# -eq 1 ]]; then
+    ref="$1"
+  elif [[ $# -eq 2 ]]; then
+    # Two args are positional: <name> <ref> — never silently demote a
+    # misspelled profile name to a ref and roll back the active profile
+    name="$1" ref="$2"
+    _validate_profile_name "$name"
+    _require_profile_exists "$name"
+  elif [[ $# -gt 2 ]]; then
+    err "Usage: claude-profile restore [name] <commit|date>"; exit 1
+  fi
 
-  name="${name:-$(get_current)}"
+  _refuse_if_op_interrupted
+
+  name="${name:-$(get_current_validated)}"
   if [[ -n "$name" ]]; then
     _validate_profile_name "$name"
   fi
@@ -196,9 +217,19 @@ cmd_restore() {
   short="$(git -C "$profile_dir" log --format='%h %s' -1 "$resolved" --)"
   info "Restoring $(_pname "$name") to: ${YELLOW}$short${NC}"
 
-  # Auto-save unsaved live changes if this is the active profile
+  # Auto-save unsaved live changes if this is the active profile; for a
+  # non-active profile, commit any stray working-tree edits the same way
   if [[ "$(get_current)" == "$name" ]]; then
     _save_current_to "$profile_dir" "Auto-save before restore to $ref"
+  else
+    _git_commit "$profile_dir" "Auto-save before restore to $ref"
+  fi
+  # The rollback deletes the working tree first — proceed only if that
+  # safety-net commit actually landed
+  if [[ -n "$(git -C "$profile_dir" status --porcelain 2>/dev/null)" ]]; then
+    err "Unsaved changes could not be committed — aborting restore (profile and live files untouched)"
+    err "Fix git in $profile_dir (e.g. configure user.name/user.email), then retry"
+    exit 1
   fi
 
   # Full rollback: remove tracked files that don't exist in the target commit,
@@ -209,7 +240,8 @@ cmd_restore() {
     exit 1
   fi
   if ! git -C "$profile_dir" checkout "$resolved" -- . 2>/dev/null; then
-    err "Failed to checkout $ref — profile unchanged"
+    git -C "$profile_dir" checkout HEAD -- . 2>/dev/null || true
+    err "Failed to check out $ref — the profile was restored to its last saved state instead"
     exit 1
   fi
   _git_commit "$profile_dir" "Restored to $ref"
@@ -217,7 +249,9 @@ cmd_restore() {
   # If active, reload into live locations
   if [[ "$(get_current)" == "$name" ]]; then
     info "Reloading active profile..."
+    _set_op_marker "use $name"
     _load_profile_to_live "$profile_dir"
+    _clear_op_marker
   fi
 
   ok "Restored $(_pname "$name") to ${YELLOW}$ref${NC}"

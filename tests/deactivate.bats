@@ -94,6 +94,53 @@ load test_helper
   [ -z "$(find "$CLAUDE_PROFILE_HOME" -mindepth 1 -maxdepth 1 -type d -name 'detached-*')" ]
 }
 
+@test "deactivate: unreadable file nested in backup aborts before live state is touched" {
+  run_cli_ok fork default
+  mkdir -p "$(backup_dir)/skills/deep"
+  echo '{}' > "$(backup_dir)/skills/deep/locked.json"
+  chmod 000 "$(backup_dir)/skills/deep/locked.json"
+  echo '{"live_marker": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli deactivate
+  local st="$status"
+  chmod 644 "$(backup_dir)/skills/deep/locked.json"
+
+  [ "$st" -ne 0 ]
+  # live state untouched
+  grep -q '"live_marker"' "$CLAUDE_CODE_HOME/settings.json"
+  [ -f "$HOME/.claude.json" ]
+}
+
+@test "deactivate: completes an interrupted restore without corrupting the profile" {
+  run_cli_ok fork default
+  echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m v2
+
+  # Simulate deactivate dying after its auto-save, mid-restore:
+  # live already moved out, backup partially copied back in
+  find "$CLAUDE_CODE_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  rm -f "$HOME/.claude.json"
+  cp "$(backup_dir)/settings.json" "$CLAUDE_CODE_HOME/settings.json"
+  echo "deactivate" > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli deactivate
+  [ "$status" -eq 0 ]
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+  [ -f "$HOME/.claude.json" ]
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
+  # profile kept its own content — not polluted by the partial restore
+  grep -q '"v2"' "$(profile_dir default)/settings.json"
+}
+
+@test "deactivate: refuses while a switch is interrupted" {
+  run_cli_ok fork default
+  echo "use default" > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli deactivate
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"interrupted"* ]]
+}
+
 @test "restores MCP config" {
   run_cli_ok fork default
   run_cli_ok new nomcp

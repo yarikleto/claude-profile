@@ -24,7 +24,21 @@ else
   PROFILES_DIR="$HOME/.local/share/claude-profile"
 fi
 
+# Refuse pathological nesting — the switch logic clears/copies whole
+# directories, so a store inside the live dir (or the reverse) would let those
+# loops destroy the store itself, including the original backup.
+if [[ "$PROFILES_DIR/" == "$CLAUDE_DIR"/* ]]; then
+  err "Profile store ($PROFILES_DIR) must not be inside the live config dir ($CLAUDE_DIR)"
+  err "Move it elsewhere and update CLAUDE_PROFILE_HOME"
+  exit 1
+fi
+if [[ "$CLAUDE_DIR/" == "$PROFILES_DIR"/* ]]; then
+  err "Live config dir ($CLAUDE_DIR) must not be inside the profile store ($PROFILES_DIR)"
+  exit 1
+fi
+
 CURRENT_FILE="$PROFILES_DIR/.current"
+OP_MARKER_FILE="$PROFILES_DIR/.op-in-progress"
 
 # Seed files for new (empty) profiles so Claude Code doesn't complain.
 # Parallel arrays: SEED_NAMES[i] is the filename, SEED_CONTENTS[i] is its content.

@@ -53,3 +53,10 @@ load test_helper
   run_cli fork default
   [ "$status" -ne 0 ]
 }
+
+@test "rejects unexpected extra argument" {
+  run_cli fork first second
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected argument"* ]]
+  [ ! -d "$(profile_dir first)" ]
+}

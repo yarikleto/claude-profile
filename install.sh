@@ -51,9 +51,12 @@ COMPLETIONS_NEED_SETUP=""
 
 expand_home_path() {
   local path="$1"
+  local zsh_dir="${ZSH:-$HOME/.oh-my-zsh}"
   path="${path/#\~/$HOME}"
   path="${path//\$\{HOME\}/$HOME}"
   path="${path//\$HOME/$HOME}"
+  path="${path//\$\{ZSH\}/$zsh_dir}"
+  path="${path//\$ZSH/$zsh_dir}"
   printf '%s\n' "$path"
 }
 
@@ -62,19 +65,30 @@ detect_oh_my_zsh_custom_dir() {
   local custom_dir=""
 
   if [[ -n "${ZSH_CUSTOM:-}" ]]; then
-    expand_home_path "$ZSH_CUSTOM"
-    return 0
+    custom_dir="$(expand_home_path "$ZSH_CUSTOM")"
+    if [[ "$custom_dir" == /* ]]; then
+      printf '%s\n' "$custom_dir"
+      return 0
+    fi
+    custom_dir=""
   fi
 
   if [[ -f "$rc" ]]; then
     custom_dir="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?ZSH_CUSTOM=//p' "$rc" | tail -n 1)"
+    custom_dir="${custom_dir%%#*}"
+    custom_dir="$(printf '%s' "$custom_dir" | sed -E 's/[[:space:]]+$//')"
     custom_dir="${custom_dir%\"}"
     custom_dir="${custom_dir#\"}"
     custom_dir="${custom_dir%\'}"
     custom_dir="${custom_dir#\'}"
     if [[ -n "$custom_dir" ]]; then
-      expand_home_path "$custom_dir"
-      return 0
+      custom_dir="$(expand_home_path "$custom_dir")"
+      # Only trust an absolute result — a relative path would create a junk
+      # directory in whatever cwd the installer runs from
+      if [[ "$custom_dir" == /* ]]; then
+        printf '%s\n' "$custom_dir"
+        return 0
+      fi
     fi
   fi
 
@@ -187,7 +201,10 @@ if [[ ! -d "$SEED_DIR" ]]; then
 fi
 
 # ─── Install statusline ─────────────────────────────────────
-"$INSTALL_DIR/claude-profile" statusline install
+# Cosmetic step — its failure must not abort PATH/completion setup below
+if ! "$INSTALL_DIR/claude-profile" statusline install; then
+  echo -e "${RED}✗${NC} Status line setup failed — run 'claude-profile statusline install' manually" >&2
+fi
 
 # ─── Check PATH ─────────────────────────────────────────────
 if ! echo "$PATH" | tr ':' '\n' | grep -Fqx "$INSTALL_DIR"; then

@@ -8,7 +8,10 @@ _json_merge() {
   if command -v jq &>/dev/null; then
     tmp="$(mktemp)"
     if jq --arg k "$key" --arg v "$value" '. + {($k): {"type": "command", "command": $v}}' "$file" > "$tmp" 2>/dev/null; then
-      mv "$tmp" "$file"; return 0
+      # Write through (not mv) so a symlinked settings.json stays a symlink
+      cat "$tmp" > "$file"
+      rm -f "$tmp"
+      return 0
     fi
     rm -f "$tmp"
   fi
@@ -36,7 +39,7 @@ fs.writeFileSync(f,JSON.stringify(d,null,2)+'\n');
 }
 
 cmd_statusline() {
-  local action="${1:-install}"
+  local action="${1:-}"
   ensure_dir
   local statusline_script="$PROFILES_DIR/statusline.sh"
 
@@ -79,7 +82,11 @@ SCRIPT
           if _json_merge "$settings" "statusLine" "$statusline_script"; then
             ok "Status line configured in settings.json"
           else
-            err "Could not update settings.json (no jq, python3, or node found)"
+            if command -v jq &>/dev/null || command -v python3 &>/dev/null || command -v node &>/dev/null; then
+              err "Could not update settings.json — it is not valid JSON"
+            else
+              err "Could not update settings.json (no jq, python3, or node found)"
+            fi
             info "Add manually to settings.json:"
             echo "  \"statusLine\": { \"type\": \"command\", \"command\": \"$statusline_script\" }"
             exit 1

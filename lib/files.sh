@@ -11,9 +11,46 @@
 # clear/summary loop runs through this predicate.
 _skip_entry() {
   case "$1" in
-    . | .. | .git | .gitignore) return 0 ;;
+    . | .. | .git | .gitignore | .saving.*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# True (0) when a profile directory holds any real entry (dotfiles included)
+# beyond the skipped git metadata.
+_dir_has_entries() {
+  local dir="$1" f base
+  for f in "$dir"/* "$dir"/.*; do
+    base="$(basename "$f")"
+    if _skip_entry "$base"; then
+      continue
+    fi
+    if [[ -L "$f" || -e "$f" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Refuse to snapshot a live state containing dangling symlinks: cp -RL cannot
+# copy them, and silently dropping them would make the snapshot lie.
+_assert_live_has_no_broken_symlinks() {
+  local f base broken
+  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.* "$HOME/.claude.json"; do
+    base="$(basename "$f")"
+    if [[ "$f" != "$HOME/.claude.json" ]] && _skip_entry "$base"; then
+      continue
+    fi
+    if [[ ! -L "$f" && ! -e "$f" ]]; then
+      continue
+    fi
+    broken="$(find "$f" \( -type l ! -exec test -e {} \; \) -print 2>/dev/null | head -1 || true)"
+    if [[ -n "$broken" ]]; then
+      err "Broken symlink in live config: $broken"
+      err "Fix or remove it, then re-run"
+      return 1
+    fi
+  done
 }
 
 # True (0) when the live state holds anything a load would destroy:
@@ -114,6 +151,7 @@ _ensure_target_parent() {
 # symlinked files are captured as regular files in the profile.
 _snapshot_current() {
   local dst="$1"
+  _assert_live_has_no_broken_symlinks || return 1
   # Copy everything from CLAUDE_DIR
   local f
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
@@ -134,33 +172,96 @@ _snapshot_current() {
 
 # Copy live state into a profile directory and commit changes.
 # With --move, items are moved instead of copied (used during switch).
+# The result is an exact snapshot: entries the live state no longer has are
+# removed from the destination, so deletions don't resurrect on the next load.
 _save_current_to() {
   local dst="$1"
   local msg="${2:-Auto-save}"
   local move="${3:-}"
   mkdir -p "$dst"
-  local f
+  # An empty live state is never worth snapshotting — and after an
+  # interrupted switch it is exactly the state that must not be allowed to
+  # propagate deletions into a profile that still holds everything.
+  if ! _live_state_nonempty; then
+    return 0
+  fi
+  if [[ "$move" != "--move" ]]; then
+    _assert_live_has_no_broken_symlinks || return 1
+  fi
+  # Clean temp entries left behind by an earlier interrupted copy
+  rm -rf "$dst"/.saving.* 2>/dev/null || true
+  local f base
+  # Deletions propagate: destination entries with no live counterpart go
+  # away. This runs BEFORE the move/copy loop — after a --move pass the live
+  # dir is empty and this comparison would wipe the freshly moved entries.
+  for f in "$dst"/* "$dst"/.*; do
+    base="$(basename "$f")"
+    if _skip_entry "$base" || [[ "$base" == ".claude.json" ]]; then
+      continue
+    fi
+    if [[ ! -L "$f" && ! -e "$f" ]]; then
+      continue
+    fi
+    if [[ ! -L "$CLAUDE_DIR/$base" && ! -e "$CLAUDE_DIR/$base" ]]; then
+      rm -rf "$f"
+    fi
+  done
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
-    local base
     base="$(basename "$f")"
     if _skip_entry "$base"; then
       continue
     fi
-    if [[ -e "$f" ]]; then
-      rm -rf "$dst/$base"
-      if [[ "$move" == "--move" ]]; then
-        mv "$f" "$dst/$base"
-      else
-        cp -RL "$f" "$dst/$base"
+    if [[ ! -L "$f" && ! -e "$f" ]]; then
+      continue
+    fi
+    if [[ "$move" == "--move" ]]; then
+      rm -rf "${dst:?}/$base"
+      mv "$f" "$dst/$base"
+    else
+      # Copy to a temp name first — the destination keeps its previous copy
+      # if the copy fails partway
+      local tmp="$dst/.saving.$base"
+      if ! cp -RL "$f" "$tmp"; then
+        rm -rf "$tmp"
+        err "Could not copy '$base' — profile keeps its previous copy"
+        return 1
       fi
+      rm -rf "${dst:?}/$base"
+      mv "$tmp" "$dst/$base"
     fi
   done
-  # Special: always copy ~/.claude.json (even with --move, since it lives outside CLAUDE_DIR)
+  # Special: always copy ~/.claude.json (even with --move, since it lives
+  # outside CLAUDE_DIR); its deletion propagates too
   if [[ -e "$HOME/.claude.json" ]]; then
-    rm -rf "$dst/.claude.json"
+    rm -rf "${dst:?}/.claude.json"
     cp -RL "$HOME/.claude.json" "$dst/.claude.json"
+  else
+    rm -rf "${dst:?}/.claude.json"
   fi
   _git_commit "$dst" "$msg"
+}
+
+# Move live entries into a profile directory WITHOUT removing anything else
+# there and without touching git. Used to return a half-moved switch's files
+# to the profile they came from before any auto-save can absorb them.
+_sweep_live_entries_to() {
+  local dst="$1" f base
+  mkdir -p "$dst"
+  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
+    base="$(basename "$f")"
+    if _skip_entry "$base"; then
+      continue
+    fi
+    if [[ -L "$f" || -e "$f" ]]; then
+      rm -rf "${dst:?}/$base"
+      mv "$f" "$dst/$base"
+    fi
+  done
+  if [[ -e "$HOME/.claude.json" ]]; then
+    rm -rf "${dst:?}/.claude.json"
+    cp -RL "$HOME/.claude.json" "$dst/.claude.json"
+    rm -f "$HOME/.claude.json"
+  fi
 }
 
 # Auto-repair symlinks left by older save code (which used cp -RH instead of cp -RL).
@@ -172,7 +273,7 @@ _repair_profile_symlinks() {
   while IFS= read -r -d '' symlink; do
     # Broken symlink: -L is true but -e is false
     if [[ ! -e "$symlink" ]]; then
-      err "Broken symlink in profile — aborting switch (live files untouched)"
+      err "Broken symlink in profile: $symlink — aborting switch (live files untouched)"
       return 1
     fi
     # Replace symlink with dereferenced copy
@@ -226,6 +327,15 @@ _validate_profile_for_load() {
           err "Symlink found in $f — aborting switch (live files untouched)"
           return 1
         fi
+        # Unreadable files nested in readable dirs would kill a copy-based
+        # load after the live state is already cleared — reject up front
+        local nested_file
+        while IFS= read -r -d '' nested_file; do
+          if [[ ! -r "$nested_file" ]]; then
+            err "Unreadable file '$nested_file' in profile — aborting switch (live files untouched)"
+            return 1
+          fi
+        done < <(find "$f" -type f -print0 2>/dev/null)
       elif [[ -f "$f" && ! -r "$f" ]]; then
         err "Unreadable file '$base' in profile — aborting switch (live files untouched)"
         return 1

@@ -3,6 +3,12 @@
 # https://github.com/yarikleto/claude-profile
 set -euo pipefail
 
+# Git exports repository-local variables (GIT_DIR, GIT_INDEX_FILE, ...) into
+# hook subprocesses. Left in place, every git call below would operate on the
+# caller's repository instead of the profile's — potentially committing
+# ~/.claude and .claude.json onto a user branch.
+unset $(git rev-parse --local-env-vars 2>/dev/null) 2>/dev/null || true
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─── Load modules ──────────────────────────────────────────
@@ -19,6 +25,12 @@ source "$SCRIPT_DIR/commands/ui.sh"
 # ─── Dispatch ──────────────────────────────────────────────
 cmd="${1:-help}"
 shift 2>/dev/null || true
+
+# Mutating commands take an exclusive lock — concurrent invocations interleave
+# rm/mv on the same live files and can destroy the sole copy of moved data.
+case "$cmd" in
+  new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore) _acquire_lock ;;
+esac
 
 case "$cmd" in
   new)            cmd_new "$@" ;;

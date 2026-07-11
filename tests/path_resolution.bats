@@ -26,3 +26,17 @@ load test_helper
   [ -d "$custom/priority-test" ]
   [ ! -d "$xdg/claude-profile/priority-test" ]
 }
+
+@test "path: refuses profile store nested inside ~/.claude" {
+  export CLAUDE_PROFILE_HOME="$CLAUDE_CODE_HOME/__profiles__"
+  run_cli list
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must not be inside"* ]]
+}
+
+@test "path: refuses ~/.claude nested inside the profile store" {
+  export CLAUDE_CODE_HOME="$CLAUDE_PROFILE_HOME/live"
+  run_cli list
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must not be inside"* ]]
+}

@@ -750,3 +750,28 @@ JSON
   [[ "$log" == *"my personal config"* ]]
   [[ "$log" != *"Profile created"* ]]
 }
+
+@test "backup: failed first snapshot is not accepted as the original backup" {
+  # Nested dangling symlink makes the first snapshot fail
+  ln -s "$BATS_TEST_TMPDIR/gone" "$CLAUDE_CODE_HOME/agents/broken"
+
+  run_cli fork first
+  [ "$status" -ne 0 ]
+  # A half-written directory must never pass for the sacred backup
+  [ ! -d "$(backup_dir)" ]
+
+  # After the user fixes the problem, a re-run creates a COMPLETE backup
+  rm "$CLAUDE_CODE_HOME/agents/broken"
+  run_cli_ok fork second
+  [ -f "$(backup_dir)/settings.json" ]
+  [ -f "$(backup_dir)/.claude.json" ]
+  [ -d "$(backup_dir)/skills" ]
+}
+
+@test "fork: fails loudly instead of silently dropping a dangling symlink" {
+  ln -s "$BATS_TEST_TMPDIR/gone" "$CLAUDE_CODE_HOME/dangling"
+
+  run_cli fork snap
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"symlink"* ]] || [[ "$output" == *"Symlink"* ]]
+}

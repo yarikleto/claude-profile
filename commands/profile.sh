@@ -1,5 +1,28 @@
 # profile.sh — Core profile operations: new, fork, use, save, deactivate
 
+# A `use` that died mid-load leaves live ~/.claude holding a partial copy of
+# the marker's target while .current still names the old profile. Any
+# auto-save at that point would absorb the target's files into the wrong
+# profile — so first move them back where they came from.
+_recover_interrupted_switch() {
+  local op target
+  op="$(_get_op_marker)"
+  if [[ -z "$op" ]]; then
+    return 0
+  fi
+  if [[ "$op" != "use "* ]]; then
+    _refuse_if_op_interrupted
+  fi
+  target="${op#use }"
+  if [[ -z "$target" || "$target" =~ [^a-zA-Z0-9._-] || "$target" == .* || "$target" == -* ]]; then
+    err "Interrupted-operation marker is corrupt — inspect and remove $OP_MARKER_FILE manually"
+    exit 1
+  fi
+  warn "A previous switch to $(_pname "$target") was interrupted — recovering..."
+  _sweep_live_entries_to "$PROFILES_DIR/$target"
+  _clear_op_marker
+}
+
 # Guard for use/new: when the auto-save will not run — no profile is current
 # (detached after deactivate), or .current names a profile dir that no longer
 # exists — loading a profile would destroy live config that is not saved in
@@ -39,10 +62,17 @@ cmd_new() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --force) force=true; shift ;;
-      *)       name="$1"; shift ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile new <name> [--force]"
+          exit 1
+        fi
+        name="$1"; shift ;;
     esac
   done
   _require_profile_name "$name" "claude-profile new <name> [--force]"
+  _refuse_if_op_interrupted
 
   # Capture before _ensure_original_backup — a pre-existing backup does NOT
   # cover config created later, so it can't justify wiping the live state.
@@ -72,14 +102,22 @@ cmd_new() {
 
   _git_init "$profile_dir"
 
+  _set_op_marker "use $name"
   _load_profile_to_live "$profile_dir"
   set_current "$name"
+  _clear_op_marker
   ok "Created and activated $(_pname "$name") ${DIM}(clean)${NC}"
 }
 
 cmd_fork() {
   local name="${1:-}"
+  if [[ $# -gt 1 ]]; then
+    err "Unexpected argument: '$2'"
+    err "Usage: claude-profile fork <name>"
+    exit 1
+  fi
   _require_profile_name "$name" "claude-profile fork <name>"
+  _refuse_if_op_interrupted
   _ensure_original_backup
 
   local profile_dir="$PROFILES_DIR/$name"
@@ -119,7 +157,13 @@ cmd_use() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --force) force=true; shift ;;
-      *)       name="$1"; shift ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile use <name> [--force]"
+          exit 1
+        fi
+        name="$1"; shift ;;
     esac
   done
   _require_profile_name "$name" "claude-profile use <name> [--force]"
@@ -131,11 +175,24 @@ cmd_use() {
     exit 1
   fi
 
+  _recover_interrupted_switch
+
   local current
   current="$(get_current_validated)"
 
   if [[ "$current" == "$name" ]]; then
-    ok "$(_pname "$name") is already active"
+    if _live_state_nonempty || ! _dir_has_entries "$profile_dir"; then
+      ok "$(_pname "$name") is already active"
+      return
+    fi
+    # The live config is gone (e.g. an interrupted switch) but the profile
+    # still holds it — reload instead of pretending all is well.
+    warn "Live config is empty — reloading $(_pname "$name")"
+    _set_op_marker "use $name"
+    _load_profile_to_live "$profile_dir" --move
+    _clear_op_marker
+    ok "Active profile: $(_pname "$name")"
+    _show_profile_summary "$name"
     return
   fi
 
@@ -159,9 +216,11 @@ cmd_use() {
   fi
 
   info "Switching to $(_pname "$name")..."
+  _set_op_marker "use $name"
   _load_profile_to_live "$profile_dir" --move
 
   set_current "$name"
+  _clear_op_marker
   ok "Active profile: $(_pname "$name")"
   _show_profile_summary "$name"
 }
@@ -170,13 +229,25 @@ cmd_save() {
   local name="" msg=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -m) msg="${2:?-m requires a message}"; shift 2 ;;
-      *)  name="$1"; shift ;;
+      -m)
+        if [[ $# -lt 2 ]]; then
+          err "-m requires a message"
+          exit 1
+        fi
+        msg="$2"; shift 2 ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile save [name] [-m message]"
+          exit 1
+        fi
+        name="$1"; shift ;;
     esac
   done
 
   name="${name:-$(get_current_validated)}"
   _require_profile_name "$name" "claude-profile save [name] [-m message]"
+  _refuse_if_op_interrupted
   _ensure_original_backup
 
   local profile_dir="$PROFILES_DIR/$name"
@@ -242,6 +313,20 @@ cmd_deactivate() {
     esac
   done
 
+  # A deactivate that died mid-restore is completed here (skipping the
+  # auto-save — live holds a partial backup copy, not user data). Any other
+  # interrupted operation must be recovered by its own command first.
+  local resume_restore=false op
+  op="$(_get_op_marker)"
+  if [[ -n "$op" ]]; then
+    if [[ "$op" == "deactivate" && "$keep" != true ]]; then
+      warn "A previous deactivate was interrupted — completing the restore..."
+      resume_restore=true
+    else
+      _refuse_if_op_interrupted
+    fi
+  fi
+
   local current
   current="$(get_current_validated)"
   local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
@@ -270,7 +355,13 @@ cmd_deactivate() {
       warn "No profile is active"; return
     fi
 
-    if [[ -n "$current" ]]; then
+    # Validate the backup BEFORE the destructive auto-save — a backup that
+    # cannot be loaded must be discovered while the live files are untouched
+    _validate_profile_for_load "$backup_dir" || return 1
+
+    if [[ "$resume_restore" == true ]]; then
+      : # live holds a partial restore — nothing of the user's to save
+    elif [[ -n "$current" ]]; then
       info "Saving $(_pname "$current")..."
       _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move
     elif _live_state_nonempty && ! _live_state_equals_dir "$backup_dir" && ! _live_state_saved_in_any_profile; then
@@ -283,9 +374,11 @@ cmd_deactivate() {
       _git_init "$detached_dir"
     fi
 
+    _set_op_marker "deactivate"
     info "Restoring original state..."
     _restore_from_backup
     clear_current
+    _clear_op_marker
     if [[ -n "$current" ]]; then
       ok "Deactivated $(_pname "$current"), restored original state"
     else

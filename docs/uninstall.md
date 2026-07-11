@@ -16,13 +16,16 @@ If you already detached with `deactivate --keep`, the same command restores the 
 **If `claude-profile` is no longer installed**, restore manually:
 
 ```bash
-# Copy files from the backup to their live locations
-cp -R ~/.local/share/claude-profile/.pre-profiles-backup/* ~/.claude/
-cp -R ~/.local/share/claude-profile/.pre-profiles-backup/.claude.json ~/.claude.json
+# Copy everything from the backup — the trailing /. includes dotfiles
+# (e.g. .credentials.json), which a bare * glob would skip
+mkdir -p ~/.claude
+cp -R ~/.local/share/claude-profile/.pre-profiles-backup/. ~/.claude/
+# .claude.json lives in $HOME, not inside ~/.claude/
+mv -f ~/.claude/.claude.json ~/.claude.json 2>/dev/null || true
 rm -f ~/.local/share/claude-profile/.current
 ```
 
-Not every file will exist — `cp` will print errors for missing ones, which is fine.
+Not every file will exist — errors about missing ones are fine.
 
 ## Step 2: Remove the CLI
 

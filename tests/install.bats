@@ -206,9 +206,11 @@ EOF
 }
 
 # ─── Remote installer ────────────────────────────────────────
+# CLAUDE_PROFILE_REPO points the installer at the local checkout so the suite
+# is hermetic (no network) and tests the code under review, not remote main.
 
 @test "remote-install: clones to temp dir, installs, cleans up" {
-  run bash "$REPO_DIR/remote-install.sh"
+  run env CLAUDE_PROFILE_REPO="file://$REPO_DIR" bash "$REPO_DIR/remote-install.sh"
   [ "$status" -eq 0 ]
   [ -f "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile" ]
   [ -x "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile" ]
@@ -220,12 +222,34 @@ EOF
   local tmp_before
   tmp_before="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' -type d 2>/dev/null | wc -l | tr -d ' ')"
 
-  bash "$REPO_DIR/remote-install.sh" >/dev/null 2>&1
+  CLAUDE_PROFILE_REPO="file://$REPO_DIR" bash "$REPO_DIR/remote-install.sh" >/dev/null 2>&1
 
   # Count tmp dirs after — should not have leftover clone dirs
   local tmp_after
   tmp_after="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' -type d 2>/dev/null | wc -l | tr -d ' ')"
   [ "$tmp_after" -le "$tmp_before" ]
+}
+
+@test "install: completes even when statusline setup fails" {
+  mkdir -p "$HOME/.claude"
+  echo '{"broken":' > "$HOME/.claude/settings.json"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Installation complete"* ]]
+}
+
+@test "zsh completions: expands \$ZSH in ZSH_CUSTOM from .zshrc" {
+  mkdir -p "$HOME/.oh-my-zsh"
+  echo 'ZSH_CUSTOM=$ZSH/custom' > "$HOME/.zshrc"
+
+  cd "$BATS_TEST_TMPDIR"
+  run env -u CLAUDE_PROFILE_COMPLETIONS_DIR -u ZSH -u ZSH_CUSTOM \
+    SHELL=/bin/zsh bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.oh-my-zsh/custom/completions/_claude-profile" ]
+  # No literal "$ZSH" directory created in the cwd
+  [ ! -e "$BATS_TEST_TMPDIR/\$ZSH" ]
 }
 
 # The completion file always lands in the user completions dir. When

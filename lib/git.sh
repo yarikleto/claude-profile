@@ -1,13 +1,23 @@
 # git.sh — Git history tracking for profile directories
 
+_git_history_warn() {
+  local dir="$1" why="$2"
+  warn "Could not record history for '$(basename "$dir")' ($why) — files saved, history skipped"
+}
+
 _git_init() {
   local dir="$1"
   if [[ ! -d "$dir/.git" ]]; then
     # Static gitignore — keeps git fast (only small config files tracked)
     echo "$GITIGNORE_CONTENT" > "$dir/.gitignore"
     git -C "$dir" init -q
-    git -C "$dir" add -A
-    git -C "$dir" commit -q -m "Profile created" --allow-empty 2>/dev/null || true
+    if ! git -C "$dir" add -A 2>/dev/null; then
+      _git_history_warn "$dir" "git add failed"
+      return 0
+    fi
+    if ! git -C "$dir" commit -q -m "Profile created" --allow-empty 2>/dev/null; then
+      _git_history_warn "$dir" "git commit failed — is your git identity configured?"
+    fi
   fi
 }
 
@@ -15,9 +25,14 @@ _git_commit() {
   local dir="$1"
   local msg="${2:-Save}"
   [[ -d "$dir/.git" ]] || _git_init "$dir"
-  git -C "$dir" add -A
+  if ! git -C "$dir" add -A 2>/dev/null; then
+    _git_history_warn "$dir" "git add failed"
+    return 0
+  fi
   if ! git -C "$dir" diff --cached --quiet 2>/dev/null; then
-    git -C "$dir" commit -q -m "$msg" 2>/dev/null || true
+    if ! git -C "$dir" commit -q -m "$msg" 2>/dev/null; then
+      _git_history_warn "$dir" "git commit failed — is your git identity configured?"
+    fi
   fi
 }
 

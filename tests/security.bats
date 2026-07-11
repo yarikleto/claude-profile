@@ -206,6 +206,8 @@ load test_helper
   run_cli use brokenlink
   [ "$status" -ne 0 ]
   [[ "$output" == *"Broken symlink"* ]]
+  # The offending path is named so the user can fix it
+  [[ "$output" == *"bad"* ]]
 }
 
 @test "use: rejects unreadable regular files in profile" {

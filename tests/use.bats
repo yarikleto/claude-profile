@@ -82,6 +82,76 @@ load test_helper
   grep -q '"mcpServers"' "$HOME/.claude.json"
 }
 
+@test "use: reloads active profile when live config was lost" {
+  run_cli_ok fork default
+
+  # Simulate an interrupted switch: live state gone, .current still set
+  rm -rf "$CLAUDE_CODE_HOME"
+  mkdir -p "$CLAUDE_CODE_HOME"
+  rm -f "$HOME/.claude.json"
+
+  run_cli use default
+  [ "$status" -eq 0 ]
+  [ -f "$CLAUDE_CODE_HOME/settings.json" ]
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+  [ -f "$HOME/.claude.json" ]
+}
+
+@test "use: recovers an interrupted switch without corrupting the previous profile" {
+  # Two profiles with distinct content, work active
+  echo '{"who": "home"}' > "$CLAUDE_CODE_HOME/settings.json"
+  mkdir -p "$CLAUDE_CODE_HOME/todos"
+  echo "home todo" > "$CLAUDE_CODE_HOME/todos/t.md"
+  run_cli_ok fork home
+  run_cli_ok new work
+  echo '{"who": "work"}' > "$CLAUDE_CODE_HOME/settings.json"
+  mkdir -p "$CLAUDE_CODE_HOME/todos"
+  echo "work todo" > "$CLAUDE_CODE_HOME/todos/t.md"
+
+  # Simulate `use home` dying mid-load: auto-save of work completed...
+  mv "$CLAUDE_CODE_HOME/settings.json" "$(profile_dir work)/settings.json"
+  rm -rf "$(profile_dir work)/todos"
+  mv "$CLAUDE_CODE_HOME/todos" "$(profile_dir work)/todos"
+  cp "$HOME/.claude.json" "$(profile_dir work)/.claude.json"
+  # ...then home's load moved only settings.json before the crash
+  rm -f "$HOME/.claude.json"
+  mv "$(profile_dir home)/settings.json" "$CLAUDE_CODE_HOME/settings.json"
+  echo "use home" > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli use home
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"interrupted"* ]]
+
+  # home fully live
+  grep -q '"who": "home"' "$CLAUDE_CODE_HOME/settings.json"
+  grep -q "home todo" "$CLAUDE_CODE_HOME/todos/t.md"
+  [ -f "$HOME/.claude.json" ]
+  # work profile intact — not polluted by home's partial files
+  grep -q '"who": "work"' "$(profile_dir work)/settings.json"
+  grep -q "work todo" "$(profile_dir work)/todos/t.md"
+}
+
+@test "use: deleted ~/.claude.json does not resurrect after a switch round-trip" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  run_cli_ok use alpha
+
+  rm -f "$HOME/.claude.json"
+  run_cli_ok use beta
+  run_cli_ok use alpha
+
+  [ ! -f "$HOME/.claude.json" ]
+}
+
+@test "use: rejects unexpected extra argument" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+
+  run_cli use alpha beta
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected argument"* ]]
+}
+
 @test "use: summary shows live contents after target profile is moved thin" {
   run_cli_ok fork alpha
   run_cli_ok fork beta

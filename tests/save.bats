@@ -38,6 +38,67 @@ load test_helper
   ! grep -q '"modified"' "$CLAUDE_CODE_HOME/settings.json"
 }
 
+@test "save: propagates top-level deletions to the profile" {
+  run_cli_ok fork default
+  rm -rf "$CLAUDE_CODE_HOME/skills"
+  rm -f "$HOME/.claude.json"
+
+  run_cli_ok save -m "removed"
+  [ ! -d "$(profile_dir default)/skills" ]
+  [ ! -f "$(profile_dir default)/.claude.json" ]
+}
+
+@test "save: profile keeps its previous copy when copying an entry fails" {
+  run_cli_ok fork default
+  chmod 000 "$CLAUDE_CODE_HOME/skills/my-skill/SKILL.md"
+
+  run_cli save -m "will fail"
+  local st="$status"
+  chmod 644 "$CLAUDE_CODE_HOME/skills/my-skill/SKILL.md"
+
+  [ "$st" -ne 0 ]
+  [ -f "$(profile_dir default)/skills/my-skill/SKILL.md" ]
+}
+
+@test "save: refuses while a switch is interrupted" {
+  run_cli_ok fork default
+  echo "use default" > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli save -m x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"interrupted"* ]]
+}
+
+@test "save: rejects unexpected extra argument" {
+  run_cli_ok fork default
+  run_cli save default extra -m "msg"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected argument"* ]]
+  [ ! -d "$(profile_dir extra)" ]
+}
+
+@test "save: -m without a message fails cleanly" {
+  run_cli_ok fork default
+  run_cli save -m
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"✗"* ]]
+  [[ "$output" == *"-m requires a message"* ]]
+}
+
+@test "save: warns but succeeds when git history cannot be recorded" {
+  run_cli_ok fork default
+  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  chmod -R a-w "$(profile_dir default)/.git"
+
+  run_cli save -m "history blocked"
+  local st="$status" out="$output"
+  chmod -R u+w "$(profile_dir default)/.git"
+
+  [ "$st" -eq 0 ]
+  [[ "$out" == *"history"* ]]
+  grep -q '"changed"' "$(profile_dir default)/settings.json"
+}
+
 @test "no-op when nothing changed" {
   run_cli_ok fork default
   run_cli_ok use default

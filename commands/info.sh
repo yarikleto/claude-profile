@@ -26,7 +26,7 @@ cmd_list() {
 
 cmd_current() {
   local current
-  current="$(get_current)"
+  current="$(get_current_validated)"
   if [[ -n "$current" ]]; then
     echo "$current"
   else
@@ -48,6 +48,7 @@ cmd_edit() {
   local name="${1:-$(get_current)}"
   _require_profile_name "$name" "claude-profile edit <name>"
   _require_profile_exists "$name"
+  _refuse_if_op_interrupted
 
   # Auto-save live state so the profile dir has the latest files
   if [[ "$(get_current)" == "$name" ]]; then
@@ -55,10 +56,11 @@ cmd_edit() {
   fi
 
   local profile_dir="$PROFILES_DIR/$name"
-  if command -v code &>/dev/null; then
+  if [[ -n "${EDITOR:-}" ]]; then
+    # EDITOR may carry arguments ("code --wait") — let a shell split it
+    sh -c "$EDITOR \"\$1\"" claude-profile-edit "$profile_dir"
+  elif command -v code &>/dev/null; then
     code "$profile_dir"
-  elif [[ -n "${EDITOR:-}" ]]; then
-    "$EDITOR" "$profile_dir"
   elif [[ "$(uname)" == "Darwin" ]]; then
     open "$profile_dir"
   else
@@ -67,12 +69,23 @@ cmd_edit() {
 }
 
 cmd_delete() {
-  local name="${1:-}" force=0
-  [[ "$name" == "-f" || "$name" == "--force" ]] && { force=1; name="${2:-}"; }
-  [[ "${2:-}" == "-f" || "${2:-}" == "--force" ]] && force=1
+  local name="" force=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--force) force=1; shift ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile delete <name> [-f]"
+          exit 1
+        fi
+        name="$1"; shift ;;
+    esac
+  done
 
   _require_profile_name "$name" "claude-profile delete <name> [-f]"
   _require_profile_exists "$name"
+  _refuse_if_op_interrupted
 
   local current
   current="$(get_current)"

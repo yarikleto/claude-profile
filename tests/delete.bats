@@ -24,6 +24,16 @@ load test_helper
   [[ "$output" == *"not found"* ]]
 }
 
+@test "rejects unexpected extra argument" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+
+  run_cli delete alpha beta
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected argument"* ]]
+  [ -d "$(profile_dir alpha)" ]
+}
+
 @test "EOF at confirm prompt cancels cleanly without deleting" {
   run_cli_ok fork victim
   # fork auto-activates, so switch away so victim is deletable

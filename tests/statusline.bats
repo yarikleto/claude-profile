@@ -35,6 +35,35 @@ load test_helper
   [[ "$output" == *"already configured"* ]]
 }
 
+@test "statusline: bare invocation shows usage instead of installing" {
+  run_cli statusline
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Usage"* ]]
+  [ ! -f "$CLAUDE_PROFILE_HOME/statusline.sh" ]
+}
+
+@test "statusline install: preserves a symlinked settings.json" {
+  command -v jq &>/dev/null || skip "test targets the jq code path"
+  local real="$BATS_TEST_TMPDIR/dotfiles-settings.json"
+  mv "$CLAUDE_CODE_HOME/settings.json" "$real"
+  ln -s "$real" "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli_ok statusline install
+  [ -L "$CLAUDE_CODE_HOME/settings.json" ]
+  grep -q '"statusLine"' "$real"
+}
+
+@test "statusline install: invalid settings.json reported as such" {
+  command -v jq &>/dev/null || command -v python3 &>/dev/null || command -v node &>/dev/null \
+    || skip "no JSON tool available"
+  echo '{"broken":' > "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli statusline install
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not valid JSON"* ]]
+  [[ "$output" != *"no jq"* ]]
+}
+
 @test "statusline install respects custom CLAUDE_PROFILE_HOME in script path" {
   export CLAUDE_PROFILE_HOME="$HOME/custom-profiles"
   mkdir -p "$CLAUDE_PROFILE_HOME"
