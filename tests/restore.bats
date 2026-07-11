@@ -164,3 +164,22 @@ load test_helper
   [ -f "$dir/settings.json" ]
   grep -q '"v2"' "$dir/settings.json"
 }
+
+@test "restore: refuses a symlinked profile root and never touches its target" {
+  run_cli_ok fork real
+
+  # An external git repo standing in for a symlinked profile's target
+  local ext="$BATS_TEST_TMPDIR/external"
+  mkdir -p "$ext"
+  echo 'CANARY' > "$ext/canary.txt"
+  git -C "$ext" init -q
+  git -C "$ext" add -A
+  git -C "$ext" commit -q -m "external"
+
+  ln -s "$ext" "$CLAUDE_PROFILE_HOME/evil"
+
+  run_cli restore evil HEAD
+  [ "$status" -ne 0 ]
+  # git rm -rf . must not have run against the symlink's target
+  [ -f "$ext/canary.txt" ]
+}

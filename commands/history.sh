@@ -206,6 +206,10 @@ cmd_restore() {
   fi
 
   local profile_dir="$PROFILES_DIR/$name"
+  # Restore runs Git mutations (git rm -rf ., checkout) directly on this dir —
+  # gate it on the same path-safety check as the file primitives so a symlinked
+  # profile root can't point them at files outside the store.
+  _assert_profile_path_safe "$profile_dir"
   if [[ ! -d "$profile_dir/.git" ]]; then
     err "No history for profile $(_pname "$name")"; exit 1
   fi

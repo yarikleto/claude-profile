@@ -28,7 +28,9 @@ source "$SCRIPT_DIR/commands/ui.sh"
 
 # Bring an existing store up to the current on-disk format before any command
 # reads or writes profiles. Idempotent (runs once per upgrade via a stamp).
-_migrate_store_format
+# Best-effort: the load path tolerates the old layout, so an odd profile dir
+# that can't be migrated must not abort (and thereby brick) every command.
+_migrate_store_format || true
 
 # ─── Dispatch ──────────────────────────────────────────────
 cmd="${1:-help}"

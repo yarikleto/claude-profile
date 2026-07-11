@@ -245,7 +245,7 @@ _ensure_seed_dir() {
 _migrate_profile_to_format2() {
   local dir="$1"
   if [[ -e "$dir/.claude.json" && ! -d "$dir/.claude.json" && ! -e "$dir/$CLAUDE_HOME_JSON" ]]; then
-    mv "$dir/.claude.json" "$dir/$CLAUDE_HOME_JSON"
+    mv "$dir/.claude.json" "$dir/$CLAUDE_HOME_JSON" 2>/dev/null || return 1
     if [[ -d "$dir/.git" ]]; then
       _git_commit "$dir" "Store home file under a reserved name" 2>/dev/null || true
     fi
@@ -271,7 +271,9 @@ _migrate_store_format() {
     if [[ "$base" == .* && "$base" != ".pre-profiles-backup" ]]; then
       continue
     fi
-    _migrate_profile_to_format2 "$dir"
+    # Best-effort per profile: an un-migratable dir (odd perms, etc.) falls back
+    # to the tolerant load path rather than blocking the rest.
+    _migrate_profile_to_format2 "$dir" || true
   done
 
   printf '%s\n' "$STORE_FORMAT" > "$STORE_FORMAT_FILE"
