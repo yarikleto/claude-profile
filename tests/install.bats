@@ -92,6 +92,17 @@ setup() {
   [ ! -e "$marker" ]
 }
 
+@test "install refuses a profile store nested inside the live config dir" {
+  export CLAUDE_CODE_HOME="$HOME/.claude"
+  export CLAUDE_PROFILE_HOME="$HOME/.claude/store"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must not be inside"* ]]
+  # Refused before any store was written
+  [ ! -d "$CLAUDE_PROFILE_HOME/.seed" ]
+}
+
 @test "installs completions to COMPLETIONS_DIR" {
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]

@@ -1,5 +1,25 @@
 # files.sh — Full-directory operations between live ~/.claude/ and profile directories
 
+# Gate every file/git mutation on a profile path. The clear/copy/rm loops
+# below follow whatever `$dst/*` expands to, so a profile root that is a
+# symlink (or otherwise resolves outside the store) would let `rm -rf` and
+# `mv` reach unrelated files. Refuse a symlinked leaf, and refuse anything that
+# does not canonically live within the store. Call BEFORE touching the path.
+_assert_profile_path_safe() {
+  local target="$1"
+  if [[ -L "$target" ]]; then
+    err "Refusing to operate on a symlinked profile path: $target"
+    exit 1
+  fi
+  local canon store
+  canon="$(_canonical_path "$target")"
+  store="$(_canonical_path "$PROFILES_DIR")"
+  if [[ "$canon" != "$store" && "$canon" != "$store"/* ]]; then
+    err "Refusing to operate outside the profile store: $target"
+    exit 1
+  fi
+}
+
 # Directory entries the tool never copies, moves, or deletes when syncing
 # between live ~/.claude/ and profile dirs:
 #   .  ..            directory self / parent
@@ -151,6 +171,7 @@ _ensure_target_parent() {
 # symlinked files are captured as regular files in the profile.
 _snapshot_current() {
   local dst="$1"
+  _assert_profile_path_safe "$dst"
   _assert_live_has_no_broken_symlinks || return 1
   # Copy everything from CLAUDE_DIR
   local f
@@ -178,6 +199,7 @@ _save_current_to() {
   local dst="$1"
   local msg="${2:-Auto-save}"
   local move="${3:-}"
+  _assert_profile_path_safe "$dst"
   mkdir -p "$dst"
   # An empty live state is never worth snapshotting — and after an
   # interrupted switch it is exactly the state that must not be allowed to
@@ -246,6 +268,7 @@ _save_current_to() {
 # to the profile they came from before any auto-save can absorb them.
 _sweep_live_entries_to() {
   local dst="$1" f base
+  _assert_profile_path_safe "$dst"
   mkdir -p "$dst"
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     base="$(basename "$f")"
@@ -349,6 +372,10 @@ _validate_profile_for_load() {
 _load_profile_to_live() {
   local profile_dir="$1"
   local move="${2:-}"
+
+  # The source must be a real dir inside the store — never a symlink whose
+  # target we would copy into the live config.
+  _assert_profile_path_safe "$profile_dir"
 
   # Pre-validate
   _validate_profile_for_load "$profile_dir" || return 1

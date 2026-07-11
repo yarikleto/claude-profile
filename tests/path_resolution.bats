@@ -40,3 +40,43 @@ load test_helper
   [ "$status" -ne 0 ]
   [[ "$output" == *"must not be inside"* ]]
 }
+
+@test "path: refuses a store nested in the live dir spelled with a relative path" {
+  mkdir -p "$CLAUDE_CODE_HOME/sub"
+  cd "$CLAUDE_CODE_HOME/sub"
+  export CLAUDE_PROFILE_HOME="../store"   # canonically inside the live dir
+  run_cli list
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must not be inside"* ]]
+}
+
+@test "path: refuses a store nested in the live dir via a symlink alias" {
+  ln -s "$CLAUDE_CODE_HOME" "$HOME/alias"
+  export CLAUDE_PROFILE_HOME="$HOME/alias/store"   # alias resolves into the live dir
+  run_cli list
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must not be inside"* ]]
+}
+
+@test "path: accepts a legitimately symlinked store root" {
+  # A symlinked store ROOT that points somewhere outside the live dir is fine —
+  # only symlinked individual profile dirs are refused (see save test below).
+  local real="$BATS_TEST_TMPDIR/real-store"
+  mkdir -p "$real"
+  ln -s "$real" "$HOME/store-link"
+  export CLAUDE_PROFILE_HOME="$HOME/store-link"
+  run_cli_ok fork default
+  [ -d "$real/default" ]
+}
+
+@test "path: save refuses a symlinked profile root and never touches its target" {
+  run_cli_ok fork real
+  local ext="$BATS_TEST_TMPDIR/external"
+  mkdir -p "$ext"
+  echo 'CANARY' > "$ext/canary.txt"
+  ln -s "$ext" "$CLAUDE_PROFILE_HOME/evil"
+
+  run_cli save evil
+  [ "$status" -ne 0 ]
+  [ -f "$ext/canary.txt" ]      # external file survives — no rm -rf through the symlink
+}

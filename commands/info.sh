@@ -101,6 +101,7 @@ cmd_delete() {
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled"; return; }
   fi
 
+  _assert_profile_path_safe "$PROFILES_DIR/$name"
   rm -rf "$PROFILES_DIR/$name"
   ok "Deleted $(_pname "$name")"
 }
