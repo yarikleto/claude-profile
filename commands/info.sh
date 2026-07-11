@@ -51,13 +51,21 @@ cmd_edit() {
   _refuse_if_op_interrupted
 
   # Auto-save live state so the profile dir has the latest files
+  local is_active=false
   if [[ "$(get_current)" == "$name" ]]; then
+    is_active=true
     _save_current_to "$PROFILES_DIR/$name" "Auto-save before edit"
   fi
 
   local profile_dir="$PROFILES_DIR/$name"
+  # A shell-split $EDITOR (vim, nano, "code --wait") runs to completion before
+  # returning — the only case where we can reliably reload the edit afterwards.
+  # `code` (no --wait) / `open` return immediately, so a reload would just race
+  # the still-open editor; leave those as before.
+  local blocking=false
   if [[ -n "${EDITOR:-}" ]]; then
     # EDITOR may carry arguments ("code --wait") — let a shell split it
+    blocking=true
     sh -c "$EDITOR \"\$1\"" claude-profile-edit "$profile_dir"
   elif command -v code &>/dev/null; then
     code "$profile_dir"
@@ -65,6 +73,17 @@ cmd_edit() {
     open "$profile_dir"
   else
     echo "$profile_dir"
+  fi
+
+  # Editing the ACTIVE profile writes into the profile dir, but live ~/.claude
+  # still holds the pre-edit state — the next save/switch would overwrite the
+  # edit from live. Reload the profile dir into live so the edit is the
+  # authoritative state. Bracket the destructive reload with the op marker so a
+  # crash mid-reload is recoverable (the profile dir keeps its copy).
+  if [[ "$is_active" == true && "$blocking" == true ]]; then
+    _set_op_marker "use $name"
+    _load_profile_to_live "$profile_dir"
+    _clear_op_marker
   fi
 }
 
