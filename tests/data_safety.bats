@@ -85,7 +85,7 @@ load test_helper
   grep -q "Alpha CLAUDE.md" "$alpha_dir/CLAUDE.md"
   grep -q "alpha-agent" "$alpha_dir/agents/myagent.md"
   grep -q '"alpha"' "$alpha_dir/keybindings.json"
-  grep -q '"alpha"' "$alpha_dir/.claude.json"
+  grep -q '"alpha"' "$alpha_dir/.claude-profile-home.json"
 }
 
 @test "use: switching back restores all managed files" {
@@ -240,7 +240,7 @@ load test_helper
 
   [ -f "$(profile_dir rescued)/skills/precious/SKILL.md" ]
   grep -q "irreplaceable" "$(profile_dir rescued)/skills/precious/SKILL.md"
-  grep -q "precious-server" "$(profile_dir rescued)/.claude.json"
+  grep -q "precious-server" "$(profile_dir rescued)/.claude-profile-home.json"
 }
 
 @test "use: proceeds without --force when detached live state is empty" {
@@ -414,7 +414,7 @@ load test_helper
   [ "$backed_settings" = "$original_settings" ]
 
   local backed_mcp
-  backed_mcp="$(cat "$backup/.claude.json")"
+  backed_mcp="$(cat "$backup/.claude-profile-home.json")"
   [ "$backed_mcp" = "$original_mcp" ]
 }
 
@@ -764,7 +764,7 @@ JSON
   rm "$CLAUDE_CODE_HOME/agents/broken"
   run_cli_ok fork second
   [ -f "$(backup_dir)/settings.json" ]
-  [ -f "$(backup_dir)/.claude.json" ]
+  [ -f "$(backup_dir)/.claude-profile-home.json" ]
   [ -d "$(backup_dir)/skills" ]
 }
 

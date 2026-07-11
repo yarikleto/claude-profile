@@ -62,8 +62,8 @@ load test_helper
   run_cli_ok use with-mcp
   [ -f "$HOME/.claude.json" ]
 
-  # Remove .claude.json from no-mcp AFTER auto-save has run
-  rm -f "$(profile_dir no-mcp)/.claude.json"
+  # Remove the stored home file from no-mcp AFTER auto-save has run
+  rm -f "$(profile_dir no-mcp)/.claude-profile-home.json"
 
   run_cli_ok use no-mcp
   # .claude.json should be gone since no-mcp profile doesn't have it
@@ -195,7 +195,7 @@ load test_helper
   run_cli use dst
   [ "$status" -eq 0 ]
   # dst's stored MCP config was never overwritten by src's
-  grep -q '"mcp":"DST"' "$(profile_dir dst)/.claude.json"
+  grep -q '"mcp":"DST"' "$(profile_dir dst)/.claude-profile-home.json"
   grep -q '"mcp":"DST"' "$HOME/.claude.json"
 }
 

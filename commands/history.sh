@@ -66,7 +66,7 @@ _snapshot_live_for_diff() {
     fi
   done
   if [[ -e "$HOME/.claude.json" ]]; then
-    cp -L "$HOME/.claude.json" "$dst/.claude.json" || return 1
+    cp -L "$HOME/.claude.json" "$(_profile_home_json "$dst")" || return 1
   fi
 }
 

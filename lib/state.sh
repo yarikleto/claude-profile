@@ -234,6 +234,49 @@ _ensure_seed_dir() {
   done
 }
 
+# ─── Store format migration ─────────────────────────────────
+# Bring an existing store up to the current on-disk format. Idempotent: a
+# format stamp records the last-applied version so this runs once per upgrade.
+#
+# Format 2: the home-level ~/.claude.json moved from a profile's root
+# ".claude.json" (which collided with a live file of the same name) to the
+# reserved CLAUDE_HOME_JSON name. The load path also tolerates the old layout,
+# so a store that misses this migration still loads correctly.
+_migrate_profile_to_format2() {
+  local dir="$1"
+  if [[ -e "$dir/.claude.json" && ! -d "$dir/.claude.json" && ! -e "$dir/$CLAUDE_HOME_JSON" ]]; then
+    mv "$dir/.claude.json" "$dir/$CLAUDE_HOME_JSON"
+    if [[ -d "$dir/.git" ]]; then
+      _git_commit "$dir" "Store home file under a reserved name" 2>/dev/null || true
+    fi
+  fi
+}
+
+_migrate_store_format() {
+  [[ -d "$PROFILES_DIR" ]] || return 0
+  local current=0
+  if [[ -f "$STORE_FORMAT_FILE" ]]; then
+    current="$(cat "$STORE_FORMAT_FILE" 2>/dev/null || echo 0)"
+  fi
+  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  if [[ "$current" -ge "$STORE_FORMAT" ]]; then
+    return 0
+  fi
+
+  local dir base
+  for dir in "$PROFILES_DIR"/* "$PROFILES_DIR/.pre-profiles-backup"; do
+    [[ -d "$dir" ]] || continue
+    base="$(basename "$dir")"
+    # Only real profiles and the backup — skip store metadata (.seed, .lock, …)
+    if [[ "$base" == .* && "$base" != ".pre-profiles-backup" ]]; then
+      continue
+    fi
+    _migrate_profile_to_format2 "$dir"
+  done
+
+  printf '%s\n' "$STORE_FORMAT" > "$STORE_FORMAT_FILE"
+}
+
 _ensure_original_backup() {
   ensure_dir
   _backup_raw_state

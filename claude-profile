@@ -26,6 +26,10 @@ source "$SCRIPT_DIR/commands/info.sh"
 source "$SCRIPT_DIR/commands/history.sh"
 source "$SCRIPT_DIR/commands/ui.sh"
 
+# Bring an existing store up to the current on-disk format before any command
+# reads or writes profiles. Idempotent (runs once per upgrade via a stamp).
+_migrate_store_format
+
 # ─── Dispatch ──────────────────────────────────────────────
 cmd="${1:-help}"
 shift 2>/dev/null || true

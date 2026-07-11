@@ -45,7 +45,7 @@ load test_helper
 
   run_cli_ok save -m "removed"
   [ ! -d "$(profile_dir default)/skills" ]
-  [ ! -f "$(profile_dir default)/.claude.json" ]
+  [ ! -f "$(profile_dir default)/.claude-profile-home.json" ]
 }
 
 @test "save: profile keeps its previous copy when copying an entry fails" {

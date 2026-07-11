@@ -70,6 +70,16 @@ fi
 
 CURRENT_FILE="$PROFILES_DIR/.current"
 OP_MARKER_FILE="$PROFILES_DIR/.op-in-progress"
+STORE_FORMAT_FILE="$PROFILES_DIR/.format"
+STORE_FORMAT=2
+
+# The home-level ~/.claude.json is stored inside a profile under this reserved
+# name, keeping it in a namespace disjoint from the live payload — a live file
+# literally named ~/.claude/.claude.json is captured as the payload entry
+# ".claude.json" and no longer collides with (or is overwritten by) the home
+# file. Profiles written before format 2 kept the home file at the root as
+# ".claude.json"; startup migration moves it here.
+CLAUDE_HOME_JSON=".claude-profile-home.json"
 
 # Seed files for new (empty) profiles so Claude Code doesn't complain.
 # Parallel arrays: SEED_NAMES[i] is the filename, SEED_CONTENTS[i] is its content.

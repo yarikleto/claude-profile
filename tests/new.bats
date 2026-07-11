@@ -43,7 +43,7 @@ load test_helper
 
   local dir="$(profile_dir seeded)"
   grep -q '"custom"' "$dir/settings.json"
-  grep -q '"default"' "$dir/.claude.json"
+  grep -q '"default"' "$dir/.claude-profile-home.json"
 }
 
 @test "custom .seed/ overrides built-in defaults" {
@@ -56,4 +56,5 @@ load test_helper
   local dir="$(profile_dir custom)"
   [[ "$(cat "$dir/settings.json")" == '{"only": "this"}' ]]
   [ ! -f "$dir/.claude.json" ]
+  [ ! -f "$dir/.claude-profile-home.json" ]
 }
