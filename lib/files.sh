@@ -31,10 +31,16 @@ _assert_profile_path_safe() {
 # clear/summary loop runs through this predicate.
 _skip_entry() {
   case "$1" in
-    . | .. | .git | .gitignore | .saving.*) return 0 ;;
+    . | .. | .git | .gitignore) return 0 ;;
     *) return 1 ;;
   esac
 }
+
+# Where copy-mode saves stage each entry before atomically moving it into a
+# profile. It lives at the STORE root (a dotdir the store-level loops already
+# skip), not inside the profile payload — so a real user file named `.saving.*`
+# is captured normally instead of colliding with a staging temp.
+_staging_dir() { printf '%s\n' "$PROFILES_DIR/.saving"; }
 
 # True (0) when a profile directory holds any real entry (dotfiles included)
 # beyond the skipped git metadata.
@@ -210,8 +216,12 @@ _save_current_to() {
   if [[ "$move" != "--move" ]]; then
     _assert_live_has_no_broken_symlinks || return 1
   fi
-  # Clean temp entries left behind by an earlier interrupted copy
-  rm -rf "$dst"/.saving.* 2>/dev/null || true
+  # Clean any staging left behind by an earlier interrupted copy. Staging lives
+  # at the store root, so this never touches a real `.saving.*` file a user may
+  # keep inside their profile.
+  local staging
+  staging="$(_staging_dir)"
+  rm -rf "$staging" 2>/dev/null || true
   local f base
   # Deletions propagate: destination entries with no live counterpart go
   # away. This runs BEFORE the move/copy loop — after a --move pass the live
@@ -240,9 +250,12 @@ _save_current_to() {
       rm -rf "${dst:?}/$base"
       mv "$f" "$dst/$base"
     else
-      # Copy to a temp name first — the destination keeps its previous copy
-      # if the copy fails partway
-      local tmp="$dst/.saving.$base"
+      # Copy into store-root staging first (same filesystem as the profile, so
+      # the move is a rename) — the destination keeps its previous copy if the
+      # copy fails partway.
+      mkdir -p "$staging"
+      local tmp="$staging/$base"
+      rm -rf "$tmp"
       if ! cp -RL "$f" "$tmp"; then
         rm -rf "$tmp"
         err "Could not copy '$base' — profile keeps its previous copy"
@@ -252,6 +265,7 @@ _save_current_to() {
       mv "$tmp" "$dst/$base"
     fi
   done
+  rm -rf "$staging" 2>/dev/null || true
   # Special: always copy ~/.claude.json (even with --move, since it lives
   # outside CLAUDE_DIR); its deletion propagates too
   if [[ -e "$HOME/.claude.json" ]]; then

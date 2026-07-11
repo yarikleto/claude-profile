@@ -60,6 +60,35 @@ load test_helper
   [ -f "$(profile_dir default)/skills/my-skill/SKILL.md" ]
 }
 
+@test "save: a live file named .saving.* is captured, not skipped as staging" {
+  echo 'SECRET' > "$CLAUDE_CODE_HOME/.saving.credentials"
+  run_cli_ok fork default
+  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "with saving file"
+
+  [ -f "$(profile_dir default)/.saving.credentials" ]
+  [ "$(cat "$(profile_dir default)/.saving.credentials")" = "SECRET" ]
+}
+
+@test "use: a .saving.* user file survives a switch round-trip" {
+  echo 'SECRET' > "$CLAUDE_CODE_HOME/.saving.data"
+  run_cli_ok fork p1
+  run_cli_ok new p2
+  run_cli_ok use p1
+
+  [ -f "$CLAUDE_CODE_HOME/.saving.data" ]
+  [ "$(cat "$CLAUDE_CODE_HOME/.saving.data")" = "SECRET" ]
+}
+
+@test "save: staging lives outside the profile payload" {
+  run_cli_ok fork default
+  echo '{"changed": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "copy save"
+  # No staging artifacts left inside the profile directory
+  run bash -c "ls -a '$(profile_dir default)' | grep -c '^\.saving'"
+  [ "$output" -eq 0 ]
+}
+
 @test "save: refuses while a switch is interrupted" {
   run_cli_ok fork default
   echo "use default" > "$CLAUDE_PROFILE_HOME/.op-in-progress"
