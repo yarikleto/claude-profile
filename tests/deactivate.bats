@@ -132,6 +132,30 @@ load test_helper
   grep -q '"v2"' "$(profile_dir default)/settings.json"
 }
 
+@test "deactivate: recovers a deactivate interrupted during its outgoing save" {
+  echo '{"who":"ORIGINAL"}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok fork base       # first command captures the backup = ORIGINAL
+  echo '{"who":"P"}' > "$CLAUDE_CODE_HOME/settings.json"
+  mkdir -p "$CLAUDE_CODE_HOME/agents"
+  echo 'AGENT-P' > "$CLAUDE_CODE_HOME/agents/a.md"
+  run_cli_ok fork P          # P active with {who:P}
+
+  # Simulate deactivate dying mid outgoing-save of P: settings.json already
+  # moved into P's profile and gone from live, agents/ not yet moved. The
+  # saving-phase marker was written before the first destructive move.
+  mv "$CLAUDE_CODE_HOME/settings.json" "$(profile_dir P)/settings.json"
+  printf 'op=deactivate\nphase=saving\nsource=P\ntarget=\n' > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli deactivate
+  [ "$status" -eq 0 ]
+  # P kept its sole copy — not exact-sync-deleted
+  grep -q '"who":"P"' "$(profile_dir P)/settings.json"
+  grep -q 'AGENT-P' "$(profile_dir P)/agents/a.md"
+  # Original state restored and detached
+  grep -q '"who":"ORIGINAL"' "$CLAUDE_CODE_HOME/settings.json"
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
+}
+
 @test "deactivate: refuses while a switch is interrupted" {
   run_cli_ok fork default
   echo "use default" > "$CLAUDE_PROFILE_HOME/.op-in-progress"

@@ -152,6 +152,53 @@ load test_helper
   [[ "$output" == *"Unexpected argument"* ]]
 }
 
+@test "use: recovers a switch interrupted during the outgoing save without deleting the source's data" {
+  echo '{"who":"A"}' > "$CLAUDE_CODE_HOME/settings.json"
+  mkdir -p "$CLAUDE_CODE_HOME/agents"
+  echo 'AGENT-A' > "$CLAUDE_CODE_HOME/agents/a.md"
+  run_cli_ok fork A
+  run_cli_ok new B
+  run_cli_ok use A
+
+  # Simulate `use B` dying mid outgoing-save of A: settings.json already moved
+  # into A's profile dir and gone from live, agents/ not yet moved. The
+  # saving-phase marker is written BEFORE the first destructive move.
+  mv "$CLAUDE_CODE_HOME/settings.json" "$(profile_dir A)/settings.json"
+  printf 'op=use\nphase=saving\nsource=A\ntarget=B\n' > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli use B
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"interrupted"* ]]
+
+  # A's sole copy of settings.json survived — not deleted by an exact-sync save
+  grep -q '"who":"A"' "$(profile_dir A)/settings.json"
+  grep -q 'AGENT-A' "$(profile_dir A)/agents/a.md"
+  # The switch to B completed
+  [ "$(cat "$CLAUDE_PROFILE_HOME/.current")" = "B" ]
+}
+
+@test "use: recovery at the save/load boundary keeps the target profile's .claude.json intact" {
+  echo '{"mcp":"SRC"}' > "$HOME/.claude.json"
+  run_cli_ok fork src
+  run_cli_ok new dst
+  echo '{"mcp":"DST"}' > "$HOME/.claude.json"
+  run_cli_ok save dst
+  run_cli_ok use src        # dst locked with DST config, src active with SRC
+
+  # Simulate `use dst` interrupted at the save->load boundary. The fix leaves
+  # live fully empty at that point (the outgoing --move clears ~/.claude.json
+  # too), so recovery has nothing of src's to leak into dst.
+  find "$CLAUDE_CODE_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  rm -f "$HOME/.claude.json"
+  printf 'op=use\nphase=loading\nsource=src\ntarget=dst\n' > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli use dst
+  [ "$status" -eq 0 ]
+  # dst's stored MCP config was never overwritten by src's
+  grep -q '"mcp":"DST"' "$(profile_dir dst)/.claude.json"
+  grep -q '"mcp":"DST"' "$HOME/.claude.json"
+}
+
 @test "use: summary shows live contents after target profile is moved thin" {
   run_cli_ok fork alpha
   run_cli_ok fork beta

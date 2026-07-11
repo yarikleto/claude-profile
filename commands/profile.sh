@@ -1,25 +1,34 @@
 # profile.sh — Core profile operations: new, fork, use, save, deactivate
 
-# A `use` that died mid-load leaves live ~/.claude holding a partial copy of
-# the marker's target while .current still names the old profile. Any
-# auto-save at that point would absorb the target's files into the wrong
-# profile — so first move them back where they came from.
+# Recover a switch that died mid-flight. The marker's PHASE says which side the
+# half-moved live state belongs to: during the outgoing save (saving) live is a
+# partial copy of the SOURCE, during the incoming load (loading) it is a partial
+# copy of the TARGET. Sweep it back to that side with a non-destructive move —
+# never the exact-sync save, which would delete a profile's sole copy. After a
+# saving-phase sweep live is empty and .current still names the source, so the
+# re-driven command's auto-save no-ops instead of propagating deletions.
 _recover_interrupted_switch() {
-  local op target
-  op="$(_get_op_marker)"
-  if [[ -z "$op" ]]; then
-    return 0
-  fi
-  if [[ "$op" != "use "* ]]; then
+  _parse_op_marker || return 0
+  if [[ "$_OP" != "use" ]]; then
+    # deactivate/unknown are recovered by their own command, not here.
     _refuse_if_op_interrupted
   fi
-  target="${op#use }"
-  if [[ -z "$target" || "$target" =~ [^a-zA-Z0-9._-] || "$target" == .* || "$target" == -* ]]; then
+  local dest
+  if [[ "$_OP_PHASE" == "saving" ]]; then
+    dest="$_OP_SOURCE"
+  else
+    dest="$_OP_TARGET"
+  fi
+  if [[ -z "$dest" || "$dest" =~ [^a-zA-Z0-9._-] || "$dest" == .* || "$dest" == -* ]]; then
     err "Interrupted-operation marker is corrupt — inspect and remove $OP_MARKER_FILE manually"
     exit 1
   fi
-  warn "A previous switch to $(_pname "$target") was interrupted — recovering..."
-  _sweep_live_entries_to "$PROFILES_DIR/$target"
+  if [[ "$_OP_PHASE" == "saving" ]]; then
+    warn "A previous switch away from $(_pname "$dest") was interrupted — recovering..."
+  else
+    warn "A previous switch to $(_pname "$dest") was interrupted — recovering..."
+  fi
+  _sweep_live_entries_to "$PROFILES_DIR/$dest"
   _clear_op_marker
 }
 
@@ -93,6 +102,9 @@ cmd_new() {
   _guard_detached_live_state "$current" "$force" "$backup_preexisted"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
+    # Mark the saving phase BEFORE the first destructive move — a crash here
+    # recovers by sweeping the half-moved live state back to the source.
+    _mark_op use saving "$current" "$name"
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move
   fi
 
@@ -102,7 +114,7 @@ cmd_new() {
 
   _git_init "$profile_dir"
 
-  _set_op_marker "use $name"
+  _mark_op use loading "$current" "$name"
   _load_profile_to_live "$profile_dir"
   set_current "$name"
   _clear_op_marker
@@ -209,14 +221,17 @@ cmd_use() {
   # Pre-validate target profile before any destructive operations
   _validate_profile_for_load "$profile_dir" || exit 1
 
-  # Auto-save current profile before switching
+  # Auto-save current profile before switching. Mark the saving phase BEFORE
+  # the first destructive move so a crash mid-save recovers by sweeping the
+  # half-moved live state back to the source — never exact-sync-deleting it.
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving $(_pname "$current")..."
+    _mark_op use saving "$current" "$name"
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'" --move
   fi
 
   info "Switching to $(_pname "$name")..."
-  _set_op_marker "use $name"
+  _mark_op use loading "$current" "$name"
   _load_profile_to_live "$profile_dir" --move
 
   set_current "$name"
@@ -313,15 +328,30 @@ cmd_deactivate() {
     esac
   done
 
-  # A deactivate that died mid-restore is completed here (skipping the
-  # auto-save — live holds a partial backup copy, not user data). Any other
-  # interrupted operation must be recovered by its own command first.
-  local resume_restore=false op
-  op="$(_get_op_marker)"
-  if [[ -n "$op" ]]; then
-    if [[ "$op" == "deactivate" && "$keep" != true ]]; then
-      warn "A previous deactivate was interrupted — completing the restore..."
-      resume_restore=true
+  # A deactivate that died mid-flight is recovered here. Any other interrupted
+  # operation must be recovered by its own command first.
+  #   phase=saving  — died during the outgoing --move; sweep the half-moved live
+  #                   state back to the source so its sole copy isn't lost, then
+  #                   fall through to a fresh deactivate (live is empty after).
+  #   phase=restore — died mid-restore; live holds a partial backup copy (not
+  #                   user data), so re-run the restore and skip the auto-save.
+  local resume_restore=false
+  _parse_op_marker || true
+  if [[ -n "$_OP" ]]; then
+    if [[ "$_OP" == "deactivate" && "$keep" != true ]]; then
+      if [[ "$_OP_PHASE" == "saving" ]]; then
+        local src="$_OP_SOURCE"
+        if [[ -z "$src" || "$src" =~ [^a-zA-Z0-9._-] || "$src" == .* || "$src" == -* ]]; then
+          err "Interrupted-operation marker is corrupt — inspect and remove $OP_MARKER_FILE manually"
+          exit 1
+        fi
+        warn "A previous deactivate was interrupted mid-save — recovering..."
+        _sweep_live_entries_to "$PROFILES_DIR/$src"
+        _clear_op_marker
+      else
+        warn "A previous deactivate was interrupted — completing the restore..."
+        resume_restore=true
+      fi
     else
       _refuse_if_op_interrupted
     fi
@@ -363,6 +393,8 @@ cmd_deactivate() {
       : # live holds a partial restore — nothing of the user's to save
     elif [[ -n "$current" ]]; then
       info "Saving $(_pname "$current")..."
+      # Saving phase marker BEFORE the first destructive move (see cmd_use).
+      _mark_op deactivate saving "$current" ""
       _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move
     elif _live_state_nonempty && ! _live_state_equals_dir "$backup_dir" && ! _live_state_saved_in_any_profile; then
       local detached_name detached_dir

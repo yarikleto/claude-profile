@@ -113,12 +113,41 @@ _acquire_lock() {
 }
 
 # ─── Interrupted-operation marker ────────────────────────────
-# Written around the destructive phase of use/deactivate and removed only on
-# success — a crash leaves it behind so the next run can recover instead of
-# auto-saving a half-switched live state into the wrong profile.
+# Bracket the destructive phase of use/new/restore/deactivate. The marker
+# records the operation, its PHASE, and the source/target profiles so a crash
+# is recovered by sweeping the half-moved live state back to the RIGHT profile:
+#   phase=saving   — crashed during the outgoing --move; live holds a partial
+#                    copy of SOURCE, so recovery sweeps it back to source.
+#   phase=loading  — crashed during the incoming load; live holds a partial
+#                    copy of TARGET, so recovery sweeps it back to target.
+#   phase=restore  — deactivate crashed mid-restore; live holds a partial copy
+#                    of the backup (handled by deactivate itself).
+# Written as key=value lines. The old single-line forms ("use X",
+# "deactivate") are still parsed so a marker left by an older binary recovers
+# instead of crashing.
 
-_set_op_marker()   { echo "$1" > "$OP_MARKER_FILE"; }
+_mark_op() {
+  local op="$1" phase="$2" source="$3" target="$4"
+  {
+    printf 'op=%s\n' "$op"
+    printf 'phase=%s\n' "$phase"
+    printf 'source=%s\n' "$source"
+    printf 'target=%s\n' "$target"
+  } > "$OP_MARKER_FILE"
+}
+
+# Back-compat single-arg writer for loading-only callers (edit/restore reload,
+# and any old call sites): "use X" → loading phase to X; "deactivate" → restore.
+_set_op_marker() {
+  case "$1" in
+    "use "*)    _mark_op use loading "" "${1#use }" ;;
+    deactivate) _mark_op deactivate restore "" "" ;;
+    *)          _mark_op "$1" "" "" "" ;;
+  esac
+}
+
 _clear_op_marker() { rm -f "$OP_MARKER_FILE"; }
+
 _get_op_marker() {
   if [[ -f "$OP_MARKER_FILE" ]]; then
     cat "$OP_MARKER_FILE"
@@ -127,21 +156,54 @@ _get_op_marker() {
   fi
 }
 
-_refuse_if_op_interrupted() {
-  local op
-  op="$(_get_op_marker)"
-  if [[ -z "$op" ]]; then
-    return 0
-  fi
-  if [[ "$op" == "use "* ]]; then
-    err "A previous switch to '${op#use }' was interrupted"
-    err "Run 'claude-profile use ${op#use }' to recover first"
-  elif [[ "$op" == "deactivate" ]]; then
-    err "A previous deactivate was interrupted"
-    err "Run 'claude-profile deactivate' to complete it first"
+# Parse the marker into globals _OP _OP_PHASE _OP_SOURCE _OP_TARGET, tolerating
+# the old single-line forms. Returns 1 (all empty) when no marker exists.
+_parse_op_marker() {
+  _OP="" _OP_PHASE="" _OP_SOURCE="" _OP_TARGET=""
+  [[ -f "$OP_MARKER_FILE" ]] || return 1
+  local first line
+  first="$(head -1 "$OP_MARKER_FILE" 2>/dev/null || true)"
+  if [[ "$first" == op=* ]]; then
+    while IFS= read -r line; do
+      case "$line" in
+        op=*)     _OP="${line#op=}" ;;
+        phase=*)  _OP_PHASE="${line#phase=}" ;;
+        source=*) _OP_SOURCE="${line#source=}" ;;
+        target=*) _OP_TARGET="${line#target=}" ;;
+      esac
+    done < "$OP_MARKER_FILE"
+  elif [[ "$first" == "use "* ]]; then
+    _OP="use"; _OP_PHASE="loading"; _OP_TARGET="${first#use }"
+  elif [[ "$first" == "deactivate" ]]; then
+    _OP="deactivate"; _OP_PHASE="restore"
   else
-    err "An interrupted operation left a marker — inspect and remove $OP_MARKER_FILE manually"
+    _OP="unknown"
   fi
+  return 0
+}
+
+_refuse_if_op_interrupted() {
+  _parse_op_marker || return 0
+  case "$_OP" in
+    use)
+      local t
+      if [[ "$_OP_PHASE" == "saving" ]]; then
+        t="$_OP_SOURCE"
+      else
+        t="$_OP_TARGET"
+      fi
+      [[ -z "$t" ]] && t="${_OP_TARGET:-$_OP_SOURCE}"
+      err "A previous switch (to '$t') was interrupted"
+      err "Run 'claude-profile use $t' to recover first"
+      ;;
+    deactivate)
+      err "A previous deactivate was interrupted"
+      err "Run 'claude-profile deactivate' to complete it first"
+      ;;
+    *)
+      err "An interrupted operation left a marker — inspect and remove $OP_MARKER_FILE manually"
+      ;;
+  esac
   exit 1
 }
 

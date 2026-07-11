@@ -266,11 +266,17 @@ _save_current_to() {
     fi
   done
   rm -rf "$staging" 2>/dev/null || true
-  # Special: always copy ~/.claude.json (even with --move, since it lives
-  # outside CLAUDE_DIR); its deletion propagates too
+  # Special: always capture ~/.claude.json (even with --move, since it lives
+  # outside CLAUDE_DIR); its deletion propagates too. With --move also remove
+  # the live copy, so the outgoing move leaves live COMPLETELY empty — a crash
+  # at the save/load boundary then has nothing left for recovery to sweep into
+  # the wrong profile (the load restores the target's own .claude.json).
   if [[ -e "$HOME/.claude.json" ]]; then
     rm -rf "${dst:?}/.claude.json"
     cp -RL "$HOME/.claude.json" "$dst/.claude.json"
+    if [[ "$move" == "--move" ]]; then
+      rm -f "$HOME/.claude.json"
+    fi
   else
     rm -rf "${dst:?}/.claude.json"
   fi
