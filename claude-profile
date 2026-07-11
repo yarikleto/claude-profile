@@ -32,8 +32,11 @@ shift 2>/dev/null || true
 
 # Mutating commands take an exclusive lock — concurrent invocations interleave
 # rm/mv on the same live files and can destroy the sole copy of moved data.
+# statusline is included: `statusline install` writes both the store and live
+# settings.json, so it can race a switch without the lock. Locking its bare
+# usage path too is harmless.
 case "$cmd" in
-  new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore) _acquire_lock ;;
+  new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore|statusline) _acquire_lock ;;
 esac
 
 case "$cmd" in

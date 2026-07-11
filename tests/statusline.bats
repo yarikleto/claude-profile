@@ -64,6 +64,22 @@ load test_helper
   [[ "$output" != *"no jq"* ]]
 }
 
+@test "statusline install: unwritable settings dir fails honestly, preserves the file" {
+  command -v jq &>/dev/null || skip "test targets the jq code path"
+  local before
+  before="$(cat "$CLAUDE_CODE_HOME/settings.json")"
+
+  chmod 555 "$CLAUDE_CODE_HOME"
+  run_cli statusline install
+  chmod 755 "$CLAUDE_CODE_HOME"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" != *"configured"* ]]
+  # The original file is untouched — never truncated — and still valid JSON
+  [ "$(cat "$CLAUDE_CODE_HOME/settings.json")" = "$before" ]
+  jq -e . "$CLAUDE_CODE_HOME/settings.json" >/dev/null
+}
+
 @test "statusline install respects custom CLAUDE_PROFILE_HOME in script path" {
   export CLAUDE_PROFILE_HOME="$HOME/custom-profiles"
   mkdir -p "$CLAUDE_PROFILE_HOME"

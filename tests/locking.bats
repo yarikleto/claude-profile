@@ -31,6 +31,18 @@ load test_helper
   [ ! -d "$CLAUDE_PROFILE_HOME/.lock" ]
 }
 
+@test "statusline install refuses to run while another holds the lock" {
+  # statusline install mutates both the store and live settings.json, so it
+  # must take the same exclusive lock as a switch or it can race one.
+  run_cli_ok fork default
+  mkdir -p "$CLAUDE_PROFILE_HOME/.lock"
+  echo "$$" > "$CLAUDE_PROFILE_HOME/.lock/pid"
+
+  run_cli statusline install
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"in progress"* ]]
+}
+
 @test "read-only commands run despite the lock" {
   run_cli_ok fork default
   mkdir -p "$CLAUDE_PROFILE_HOME/.lock"
