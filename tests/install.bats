@@ -71,6 +71,27 @@ setup() {
   [[ "$output" == *"default"* ]]
 }
 
+@test "install dir containing a double-quote does not inject shell into the binary" {
+  # The installer rewrites SCRIPT_DIR in the generated binary. A path with a
+  # double-quote must not break out of the assignment and run a command when
+  # the binary is later executed.
+  local marker="$BATS_TEST_TMPDIR/PWNED"
+  export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/li\"; touch '$marker'; x=\""
+  export CLAUDE_PROFILE_COMPLETIONS_DIR="$BATS_TEST_TMPDIR/completions2"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+
+  export CLAUDE_CODE_HOME="$HOME/.claude"
+  mkdir -p "$CLAUDE_CODE_HOME"
+  git config --global user.name "test"
+  git config --global user.email "test@test"
+  run bash "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile" version
+  [ "$status" -eq 0 ]
+
+  [ ! -e "$marker" ]
+}
+
 @test "installs completions to COMPLETIONS_DIR" {
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
@@ -320,7 +341,23 @@ EOF
   [[ "$output" != *"Add to your PATH"* ]]
 }
 
-# ─── Sed injection safety (install path with special chars) ──
+# ─── Injection safety (install path with special chars) ──
+# The generated SCRIPT_DIR assignment must resolve to the right lib dir and run
+# no embedded command, no matter what the install path contains. Assert the
+# behaviour (the installed binary finds its libs and runs) rather than a
+# brittle string format.
+
+_installed_binary_runs() {
+  export CLAUDE_CODE_HOME="$HOME/.claude"
+  mkdir -p "$CLAUDE_CODE_HOME"
+  git config --global user.name "test"
+  git config --global user.email "test@test"
+  run bash "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile" version
+  local expected
+  expected="$(sed -n '1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}' "$REPO_DIR/VERSION")"
+  [ "$status" -eq 0 ]
+  [ "$output" = "claude-profile $expected" ]
+}
 
 @test "install: handles pipe character in install path" {
   export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/bin|pipe"
@@ -328,9 +365,7 @@ EOF
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-
-  local expected_lib="$CLAUDE_PROFILE_INSTALL_DIR/claude-profile-lib"
-  grep -qF "SCRIPT_DIR=\"$expected_lib\"" "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile"
+  _installed_binary_runs
 }
 
 @test "install: handles ampersand in install path" {
@@ -339,9 +374,7 @@ EOF
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-
-  local expected_lib="$CLAUDE_PROFILE_INSTALL_DIR/claude-profile-lib"
-  grep -qF "SCRIPT_DIR=\"$expected_lib\"" "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile"
+  _installed_binary_runs
 }
 
 @test "install: handles backslash in install path" {
@@ -350,7 +383,14 @@ EOF
 
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
+  _installed_binary_runs
+}
 
-  local expected_lib="$CLAUDE_PROFILE_INSTALL_DIR/claude-profile-lib"
-  grep -qF "SCRIPT_DIR=\"$expected_lib\"" "$CLAUDE_PROFILE_INSTALL_DIR/claude-profile"
+@test "install: handles a dollar sign and backtick in install path" {
+  export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/bin\$(id)\`id\`"
+  mkdir -p "$CLAUDE_PROFILE_INSTALL_DIR"
+
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -eq 0 ]
+  _installed_binary_runs
 }

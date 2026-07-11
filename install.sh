@@ -33,12 +33,16 @@ cp "$SCRIPT_DIR"/lib/*.sh "$INSTALL_LIB/lib/"
 cp "$SCRIPT_DIR"/commands/*.sh "$INSTALL_LIB/commands/"
 chmod +x "$INSTALL_DIR/claude-profile"
 
-# Patch SCRIPT_DIR in installed binary to point to lib location
-# Use awk with ENVIRON to avoid injection via special chars (|, &, \) in paths.
-# ENVIRON reads the raw env var value without processing escape sequences,
-# unlike awk -v which interprets \n, \t, etc.
-INSTALL_LIB="$INSTALL_LIB" awk '{
-  if ($0 ~ /^SCRIPT_DIR=/) print "SCRIPT_DIR=\"" ENVIRON["INSTALL_LIB"] "\""
+# Patch SCRIPT_DIR in installed binary to point to lib location.
+# `printf %q` renders the path as a single shell-safe token (it supplies its
+# own quoting/escaping), so the generated assignment stays inert even when the
+# path contains a double-quote, `;`, `$`, backtick, or newline. Emitting it
+# without surrounding literal quotes is what closes the injection: quoting the
+# awk output ourselves would let a `"` in the path break back out at re-source.
+# ENVIRON reads the raw value without processing escape sequences (unlike -v).
+SCRIPT_DIR_ASSIGN="SCRIPT_DIR=$(printf '%q' "$INSTALL_LIB")"
+SCRIPT_DIR_ASSIGN="$SCRIPT_DIR_ASSIGN" awk '{
+  if ($0 ~ /^SCRIPT_DIR=/) print ENVIRON["SCRIPT_DIR_ASSIGN"]
   else print
 }' "$INSTALL_DIR/claude-profile" > "$INSTALL_DIR/claude-profile.tmp"
 mv "$INSTALL_DIR/claude-profile.tmp" "$INSTALL_DIR/claude-profile"
