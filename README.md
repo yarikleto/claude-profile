@@ -179,7 +179,7 @@ The active profile name is shown in the Claude Code status line automatically:
 Opus 4.6 · profile: review
 ```
 
-This is configured during installation. If you already have a custom `statusLine` in `settings.json`, it won't be overwritten — run `claude-profile statusline install` manually to set it up.
+The `install.sh` and curl one-liner installs configure this automatically; after a Homebrew install, run `claude-profile statusline install` once. If you already have a custom `statusLine` in `settings.json`, it won't be overwritten.
 
 ## Safety
 

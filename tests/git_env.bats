@@ -2,6 +2,7 @@
 # Regression coverage for Git hook environments. Git launches hooks with
 # repository-local GIT_* variables exported; the test suite must scrub those at
 # load time before any fixture creates commits.
+load test_helper
 
 clean_git() (
   unset $(git rev-parse --local-env-vars 2>/dev/null) \
@@ -41,4 +42,33 @@ clean_git() (
     echo "$canary_status"
   fi
   [ -z "$canary_status" ]
+}
+
+@test "git environment: CLI scrubs inherited repository variables (hook safety)" {
+  local canary="$BATS_TEST_TMPDIR/canary"
+  clean_git init -q "$canary"
+  clean_git -C "$canary" -c user.email=test@test -c user.name=test \
+    commit -q --allow-empty -m CANARY
+  local expected_head
+  expected_head="$(clean_git -C "$canary" rev-parse HEAD)"
+
+  # Simulate being invoked from a git hook of the canary repo
+  run env \
+    GIT_DIR="$canary/.git" \
+    GIT_WORK_TREE="$canary" \
+    GIT_INDEX_FILE="$canary/.git/index" \
+    bash "$CLAUDE_PROFILE" fork hooked
+  if [[ "$status" -ne 0 ]]; then
+    echo "$output"
+  fi
+  [ "$status" -eq 0 ]
+
+  # Profile history landed in the profile repo
+  [ -d "$CLAUDE_PROFILE_HOME/hooked/.git" ]
+  [ "$(clean_git -C "$CLAUDE_PROFILE_HOME/hooked" rev-list --count HEAD)" -ge 1 ]
+
+  # Canary repo untouched
+  [ "$(clean_git -C "$canary" rev-parse HEAD)" = "$expected_head" ]
+  [ "$(clean_git -C "$canary" rev-list --count HEAD)" -eq 1 ]
+  [ -z "$(clean_git -C "$canary" status --short)" ]
 }

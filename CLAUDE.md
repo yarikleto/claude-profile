@@ -57,8 +57,11 @@ completions/
 - **All git operations go through `lib/git.sh`**. Never call `git` directly in command files — use `_git_init`, `_git_commit`, `_git_resolve_ref`.
 - **Profiles are independent copies, not symlinks**. Switching copies/moves the entire `~/.claude/` directory.
 - **The original backup (`.pre-profiles-backup/`) is never overwritten or deleted by normal profile operations** after creation. It's the safety net.
-- **Profiles are stored in XDG-compliant location** (`~/.local/share/claude-profile/`), separate from `~/.claude/`.
-- **`~/.claude.json`** lives in `$HOME`, not inside `~/.claude/`. It is stored as `.claude.json` inside profile directories.
+- **Profiles are stored in XDG-compliant location** (`~/.local/share/claude-profile/`), separate from `~/.claude/`. Startup refuses a store nested inside `~/.claude/` (or the reverse) — the switch loops would destroy the store.
+- **Mutating commands take an exclusive lock** (`$PROFILES_DIR/.lock`, with stale-lock takeover) so concurrent invocations can't interleave rm/mv on the same live files.
+- **The destructive phase of `use`/`new`/`restore`/`deactivate` is bracketed by an `.op-in-progress` marker.** After a crash mid-switch, `use` sweeps the partially moved files back into the marker's target profile before anything can auto-save them into the wrong profile; other mutating commands refuse to run until recovered. `deactivate` completes its own interrupted restore.
+- **Auto-saves are exact snapshots**: entries (and `~/.claude.json`) deleted from the live state are also removed from the profile copy, so deletions don't resurrect on the next switch. An entirely empty live state is never saved.
+- **`~/.claude.json`** lives in `$HOME`, not inside `~/.claude/`. Inside a profile it is stored under the reserved name `.claude-profile-home.json`, keeping it in a namespace disjoint from the live payload — a live file literally named `~/.claude/.claude.json` is captured as the payload entry `.claude.json` without colliding with the home file. A startup migration (`.format` stamp) moves profiles written under the older flat layout.
 - **The top-level `VERSION` file is the version source of truth**. `lib/config.sh` reads it at runtime; installers and Homebrew formulas must ship it with the runtime files.
 
 ### Full-directory snapshots

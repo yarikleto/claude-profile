@@ -114,3 +114,72 @@ load test_helper
   [ "$status" -ne 0 ]
   [[ "$output" == *"Usage"* ]]
 }
+
+@test "restore: aborts when the auto-save cannot be committed" {
+  run_cli_ok fork default
+  local dir="$(profile_dir default)"
+  local initial
+  initial="$(git -C "$dir" log --format='%H' -1)"
+  echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "Version 2"
+  echo '{"unsaved": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  # Make every commit in this repo fail
+  git -C "$dir" config commit.gpgsign true
+  git -C "$dir" config gpg.program /nonexistent-gpg
+
+  run_cli restore "$initial"
+  [ "$status" -ne 0 ]
+  # unsaved live change still present
+  grep -q '"unsaved"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
+@test "restore: two-arg form fails on nonexistent profile name" {
+  run_cli_ok fork default
+  echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m v2
+
+  run_cli restore nonexistent HEAD
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found"* ]]
+  grep -q '"v2"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
+@test "restore: failed checkout does not leave the profile tree empty" {
+  run_cli_ok fork default
+  local dir="$(profile_dir default)"
+  local initial
+  initial="$(git -C "$dir" log --format='%H' -1)"
+
+  echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "Version 2"
+
+  # Remove the initial commit's root tree object so its checkout must fail
+  local tree
+  tree="$(git -C "$dir" rev-parse "$initial^{tree}")"
+  rm -f "$dir/.git/objects/${tree:0:2}/${tree:2}"
+
+  run_cli restore default "$initial"
+  [ "$status" -ne 0 ]
+  [ -f "$dir/settings.json" ]
+  grep -q '"v2"' "$dir/settings.json"
+}
+
+@test "restore: refuses a symlinked profile root and never touches its target" {
+  run_cli_ok fork real
+
+  # An external git repo standing in for a symlinked profile's target
+  local ext="$BATS_TEST_TMPDIR/external"
+  mkdir -p "$ext"
+  echo 'CANARY' > "$ext/canary.txt"
+  git -C "$ext" init -q
+  git -C "$ext" add -A
+  git -C "$ext" commit -q -m "external"
+
+  ln -s "$ext" "$CLAUDE_PROFILE_HOME/evil"
+
+  run_cli restore evil HEAD
+  [ "$status" -ne 0 ]
+  # git rm -rf . must not have run against the symlink's target
+  [ -f "$ext/canary.txt" ]
+}

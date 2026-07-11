@@ -33,12 +33,16 @@ cp "$SCRIPT_DIR"/lib/*.sh "$INSTALL_LIB/lib/"
 cp "$SCRIPT_DIR"/commands/*.sh "$INSTALL_LIB/commands/"
 chmod +x "$INSTALL_DIR/claude-profile"
 
-# Patch SCRIPT_DIR in installed binary to point to lib location
-# Use awk with ENVIRON to avoid injection via special chars (|, &, \) in paths.
-# ENVIRON reads the raw env var value without processing escape sequences,
-# unlike awk -v which interprets \n, \t, etc.
-INSTALL_LIB="$INSTALL_LIB" awk '{
-  if ($0 ~ /^SCRIPT_DIR=/) print "SCRIPT_DIR=\"" ENVIRON["INSTALL_LIB"] "\""
+# Patch SCRIPT_DIR in installed binary to point to lib location.
+# `printf %q` renders the path as a single shell-safe token (it supplies its
+# own quoting/escaping), so the generated assignment stays inert even when the
+# path contains a double-quote, `;`, `$`, backtick, or newline. Emitting it
+# without surrounding literal quotes is what closes the injection: quoting the
+# awk output ourselves would let a `"` in the path break back out at re-source.
+# ENVIRON reads the raw value without processing escape sequences (unlike -v).
+SCRIPT_DIR_ASSIGN="SCRIPT_DIR=$(printf '%q' "$INSTALL_LIB")"
+SCRIPT_DIR_ASSIGN="$SCRIPT_DIR_ASSIGN" awk '{
+  if ($0 ~ /^SCRIPT_DIR=/) print ENVIRON["SCRIPT_DIR_ASSIGN"]
   else print
 }' "$INSTALL_DIR/claude-profile" > "$INSTALL_DIR/claude-profile.tmp"
 mv "$INSTALL_DIR/claude-profile.tmp" "$INSTALL_DIR/claude-profile"
@@ -51,9 +55,12 @@ COMPLETIONS_NEED_SETUP=""
 
 expand_home_path() {
   local path="$1"
+  local zsh_dir="${ZSH:-$HOME/.oh-my-zsh}"
   path="${path/#\~/$HOME}"
   path="${path//\$\{HOME\}/$HOME}"
   path="${path//\$HOME/$HOME}"
+  path="${path//\$\{ZSH\}/$zsh_dir}"
+  path="${path//\$ZSH/$zsh_dir}"
   printf '%s\n' "$path"
 }
 
@@ -62,19 +69,30 @@ detect_oh_my_zsh_custom_dir() {
   local custom_dir=""
 
   if [[ -n "${ZSH_CUSTOM:-}" ]]; then
-    expand_home_path "$ZSH_CUSTOM"
-    return 0
+    custom_dir="$(expand_home_path "$ZSH_CUSTOM")"
+    if [[ "$custom_dir" == /* ]]; then
+      printf '%s\n' "$custom_dir"
+      return 0
+    fi
+    custom_dir=""
   fi
 
   if [[ -f "$rc" ]]; then
     custom_dir="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?ZSH_CUSTOM=//p' "$rc" | tail -n 1)"
+    custom_dir="${custom_dir%%#*}"
+    custom_dir="$(printf '%s' "$custom_dir" | sed -E 's/[[:space:]]+$//')"
     custom_dir="${custom_dir%\"}"
     custom_dir="${custom_dir#\"}"
     custom_dir="${custom_dir%\'}"
     custom_dir="${custom_dir#\'}"
     if [[ -n "$custom_dir" ]]; then
-      expand_home_path "$custom_dir"
-      return 0
+      custom_dir="$(expand_home_path "$custom_dir")"
+      # Only trust an absolute result — a relative path would create a junk
+      # directory in whatever cwd the installer runs from
+      if [[ "$custom_dir" == /* ]]; then
+        printf '%s\n' "$custom_dir"
+        return 0
+      fi
     fi
   fi
 
@@ -168,6 +186,39 @@ else
   PROFILES_DIR="$HOME/.local/share/claude-profile"
 fi
 
+# ─── Refuse pathological nesting before any store write ─────
+# Mirror the CLI's config.sh guard: a store inside the live dir (or the
+# reverse) makes the switch loops destroy the store. Canonicalize so a
+# trailing slash, `..`, a relative spelling, or a symlink can't slip past.
+canonical_path() {
+  local path="$1" tail="" dir parent base
+  dir="$path"
+  while [[ ! -e "$dir" ]]; do
+    base="$(basename "$dir")"
+    tail="/$base$tail"
+    parent="$(dirname "$dir")"
+    [[ "$parent" == "$dir" ]] && break
+    dir="$parent"
+  done
+  local canon
+  if canon="$(cd "$dir" 2>/dev/null && pwd -P)"; then
+    [[ "$canon" == "/" ]] && canon=""
+    local result="$canon$tail"
+    [[ -z "$result" ]] && result="/"
+    printf '%s\n' "$result"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+CANON_PROFILES="$(canonical_path "$PROFILES_DIR")"
+CANON_CLAUDE="$(canonical_path "$CLAUDE_DIR")"
+if [[ "$CANON_PROFILES" == "$CANON_CLAUDE" || "$CANON_PROFILES" == "$CANON_CLAUDE"/* ]]; then
+  err "Profile store ($PROFILES_DIR) must not be inside the live config dir ($CLAUDE_DIR) — set CLAUDE_PROFILE_HOME elsewhere"
+fi
+if [[ "$CANON_CLAUDE" == "$CANON_PROFILES"/* ]]; then
+  err "Live config dir ($CLAUDE_DIR) must not be inside the profile store ($PROFILES_DIR)"
+fi
+
 # ─── Migrate from old location ──────────────────────────────
 OLD_PROFILES_DIR="$CLAUDE_DIR/__profiles__"
 if [[ -d "$OLD_PROFILES_DIR" && ! -d "$PROFILES_DIR" && ! -L "$PROFILES_DIR" ]]; then
@@ -187,7 +238,10 @@ if [[ ! -d "$SEED_DIR" ]]; then
 fi
 
 # ─── Install statusline ─────────────────────────────────────
-"$INSTALL_DIR/claude-profile" statusline install
+# Cosmetic step — its failure must not abort PATH/completion setup below
+if ! "$INSTALL_DIR/claude-profile" statusline install; then
+  echo -e "${RED}✗${NC} Status line setup failed — run 'claude-profile statusline install' manually" >&2
+fi
 
 # ─── Check PATH ─────────────────────────────────────────────
 if ! echo "$PATH" | tr ':' '\n' | grep -Fqx "$INSTALL_DIR"; then

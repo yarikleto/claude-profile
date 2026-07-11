@@ -94,6 +94,77 @@ load test_helper
   [ -z "$(find "$CLAUDE_PROFILE_HOME" -mindepth 1 -maxdepth 1 -type d -name 'detached-*')" ]
 }
 
+@test "deactivate: unreadable file nested in backup aborts before live state is touched" {
+  run_cli_ok fork default
+  mkdir -p "$(backup_dir)/skills/deep"
+  echo '{}' > "$(backup_dir)/skills/deep/locked.json"
+  chmod 000 "$(backup_dir)/skills/deep/locked.json"
+  echo '{"live_marker": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli deactivate
+  local st="$status"
+  chmod 644 "$(backup_dir)/skills/deep/locked.json"
+
+  [ "$st" -ne 0 ]
+  # live state untouched
+  grep -q '"live_marker"' "$CLAUDE_CODE_HOME/settings.json"
+  [ -f "$HOME/.claude.json" ]
+}
+
+@test "deactivate: completes an interrupted restore without corrupting the profile" {
+  run_cli_ok fork default
+  echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m v2
+
+  # Simulate deactivate dying after its auto-save, mid-restore:
+  # live already moved out, backup partially copied back in
+  find "$CLAUDE_CODE_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  rm -f "$HOME/.claude.json"
+  cp "$(backup_dir)/settings.json" "$CLAUDE_CODE_HOME/settings.json"
+  echo "deactivate" > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli deactivate
+  [ "$status" -eq 0 ]
+  grep -q '"effortLevel"' "$CLAUDE_CODE_HOME/settings.json"
+  [ -f "$HOME/.claude.json" ]
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
+  # profile kept its own content — not polluted by the partial restore
+  grep -q '"v2"' "$(profile_dir default)/settings.json"
+}
+
+@test "deactivate: recovers a deactivate interrupted during its outgoing save" {
+  echo '{"who":"ORIGINAL"}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok fork base       # first command captures the backup = ORIGINAL
+  echo '{"who":"P"}' > "$CLAUDE_CODE_HOME/settings.json"
+  mkdir -p "$CLAUDE_CODE_HOME/agents"
+  echo 'AGENT-P' > "$CLAUDE_CODE_HOME/agents/a.md"
+  run_cli_ok fork P          # P active with {who:P}
+
+  # Simulate deactivate dying mid outgoing-save of P: settings.json already
+  # moved into P's profile and gone from live, agents/ not yet moved. The
+  # saving-phase marker was written before the first destructive move.
+  mv "$CLAUDE_CODE_HOME/settings.json" "$(profile_dir P)/settings.json"
+  printf 'op=deactivate\nphase=saving\nsource=P\ntarget=\n' > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli deactivate
+  [ "$status" -eq 0 ]
+  # P kept its sole copy — not exact-sync-deleted
+  grep -q '"who":"P"' "$(profile_dir P)/settings.json"
+  grep -q 'AGENT-P' "$(profile_dir P)/agents/a.md"
+  # Original state restored and detached
+  grep -q '"who":"ORIGINAL"' "$CLAUDE_CODE_HOME/settings.json"
+  [ ! -f "$CLAUDE_PROFILE_HOME/.current" ]
+}
+
+@test "deactivate: refuses while a switch is interrupted" {
+  run_cli_ok fork default
+  echo "use default" > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+
+  run_cli deactivate
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"interrupted"* ]]
+}
+
 @test "restores MCP config" {
   run_cli_ok fork default
   run_cli_ok new nomcp

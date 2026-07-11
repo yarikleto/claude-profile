@@ -7,7 +7,7 @@ load test_helper
   local dir="$(profile_dir default)"
   [ -f "$dir/settings.json" ]
   [ -d "$dir/skills/my-skill" ]
-  [ -f "$dir/.claude.json" ]
+  [ -f "$dir/.claude-profile-home.json" ]
   [ -d "$dir/.git" ]
 }
 
@@ -16,7 +16,7 @@ load test_helper
 
   local dir="$(profile_dir default)"
   grep -q '"effortLevel"' "$dir/settings.json"
-  grep -q '"mcpServers"' "$dir/.claude.json"
+  grep -q '"mcpServers"' "$dir/.claude-profile-home.json"
 }
 
 @test "creates original backup" {
@@ -25,7 +25,7 @@ load test_helper
   local backup="$(backup_dir)"
   [ -d "$backup" ]
   [ -f "$backup/settings.json" ]
-  [ -f "$backup/.claude.json" ]
+  [ -f "$backup/.claude-profile-home.json" ]
 }
 
 @test "backup happens only once" {
@@ -52,4 +52,11 @@ load test_helper
   run_cli_ok fork default
   run_cli fork default
   [ "$status" -ne 0 ]
+}
+
+@test "rejects unexpected extra argument" {
+  run_cli fork first second
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected argument"* ]]
+  [ ! -d "$(profile_dir first)" ]
 }

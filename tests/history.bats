@@ -31,6 +31,12 @@ load test_helper
   [[ "$output" == *"No history"* ]]
 }
 
+@test "history: fails on nonexistent profile" {
+  run_cli history nope
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found"* ]]
+}
+
 @test "restore: rejects path traversal in name" {
   run_cli restore "../../etc" HEAD
   [ "$status" -ne 0 ]

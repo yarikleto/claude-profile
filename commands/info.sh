@@ -26,7 +26,7 @@ cmd_list() {
 
 cmd_current() {
   local current
-  current="$(get_current)"
+  current="$(get_current_validated)"
   if [[ -n "$current" ]]; then
     echo "$current"
   else
@@ -48,31 +48,63 @@ cmd_edit() {
   local name="${1:-$(get_current)}"
   _require_profile_name "$name" "claude-profile edit <name>"
   _require_profile_exists "$name"
+  _refuse_if_op_interrupted
 
   # Auto-save live state so the profile dir has the latest files
+  local is_active=false
   if [[ "$(get_current)" == "$name" ]]; then
+    is_active=true
     _save_current_to "$PROFILES_DIR/$name" "Auto-save before edit"
   fi
 
   local profile_dir="$PROFILES_DIR/$name"
-  if command -v code &>/dev/null; then
+  # A shell-split $EDITOR (vim, nano, "code --wait") runs to completion before
+  # returning — the only case where we can reliably reload the edit afterwards.
+  # `code` (no --wait) / `open` return immediately, so a reload would just race
+  # the still-open editor; leave those as before.
+  local blocking=false
+  if [[ -n "${EDITOR:-}" ]]; then
+    # EDITOR may carry arguments ("code --wait") — let a shell split it
+    blocking=true
+    sh -c "$EDITOR \"\$1\"" claude-profile-edit "$profile_dir"
+  elif command -v code &>/dev/null; then
     code "$profile_dir"
-  elif [[ -n "${EDITOR:-}" ]]; then
-    "$EDITOR" "$profile_dir"
   elif [[ "$(uname)" == "Darwin" ]]; then
     open "$profile_dir"
   else
     echo "$profile_dir"
   fi
+
+  # Editing the ACTIVE profile writes into the profile dir, but live ~/.claude
+  # still holds the pre-edit state — the next save/switch would overwrite the
+  # edit from live. Reload the profile dir into live so the edit is the
+  # authoritative state. Bracket the destructive reload with the op marker so a
+  # crash mid-reload is recoverable (the profile dir keeps its copy).
+  if [[ "$is_active" == true && "$blocking" == true ]]; then
+    _set_op_marker "use $name"
+    _load_profile_to_live "$profile_dir"
+    _clear_op_marker
+  fi
 }
 
 cmd_delete() {
-  local name="${1:-}" force=0
-  [[ "$name" == "-f" || "$name" == "--force" ]] && { force=1; name="${2:-}"; }
-  [[ "${2:-}" == "-f" || "${2:-}" == "--force" ]] && force=1
+  local name="" force=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--force) force=1; shift ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile delete <name> [-f]"
+          exit 1
+        fi
+        name="$1"; shift ;;
+    esac
+  done
 
   _require_profile_name "$name" "claude-profile delete <name> [-f]"
   _require_profile_exists "$name"
+  _refuse_if_op_interrupted
 
   local current
   current="$(get_current)"
@@ -88,6 +120,7 @@ cmd_delete() {
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled"; return; }
   fi
 
+  _assert_profile_path_safe "$PROFILES_DIR/$name"
   rm -rf "$PROFILES_DIR/$name"
   ok "Deleted $(_pname "$name")"
 }

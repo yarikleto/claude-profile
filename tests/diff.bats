@@ -73,6 +73,23 @@ load test_helper
   [[ "$output" == *"no changes"* ]]
 }
 
+@test "diff: two-arg form fails on nonexistent profile name" {
+  run_cli_ok fork default
+  run_cli diff nonexistent HEAD
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found"* ]]
+}
+
+@test "diff: user's live .gitignore does not hide unsaved changes" {
+  run_cli_ok fork default
+  echo '*.local.json' > "$CLAUDE_CODE_HOME/.gitignore"
+  echo '{"local": true}' > "$CLAUDE_CODE_HOME/settings.local.json"
+
+  run_cli diff
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"settings.local.json"* ]]
+}
+
 @test "with commit ref shows git diff" {
   run_cli_ok fork default
   run_cli_ok use default

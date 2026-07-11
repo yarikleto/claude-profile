@@ -26,6 +26,14 @@ load test_helper
   [[ "$output" == *"Usage"* ]]
 }
 
+@test "rejects unexpected extra argument" {
+  run_cli new first second
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected argument"* ]]
+  [ ! -d "$(profile_dir first)" ]
+  [ ! -d "$(profile_dir second)" ]
+}
+
 @test "uses custom .seed/ directory when present" {
   mkdir -p "$CLAUDE_PROFILE_HOME/.seed"
   echo '{"custom": true}' > "$CLAUDE_PROFILE_HOME/.seed/settings.json"
@@ -35,7 +43,7 @@ load test_helper
 
   local dir="$(profile_dir seeded)"
   grep -q '"custom"' "$dir/settings.json"
-  grep -q '"default"' "$dir/.claude.json"
+  grep -q '"default"' "$dir/.claude-profile-home.json"
 }
 
 @test "custom .seed/ overrides built-in defaults" {
@@ -48,4 +56,5 @@ load test_helper
   local dir="$(profile_dir custom)"
   [[ "$(cat "$dir/settings.json")" == '{"only": "this"}' ]]
   [ ! -f "$dir/.claude.json" ]
+  [ ! -f "$dir/.claude-profile-home.json" ]
 }

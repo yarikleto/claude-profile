@@ -1,5 +1,37 @@
 # profile.sh — Core profile operations: new, fork, use, save, deactivate
 
+# Recover a switch that died mid-flight. The marker's PHASE says which side the
+# half-moved live state belongs to: during the outgoing save (saving) live is a
+# partial copy of the SOURCE, during the incoming load (loading) it is a partial
+# copy of the TARGET. Sweep it back to that side with a non-destructive move —
+# never the exact-sync save, which would delete a profile's sole copy. After a
+# saving-phase sweep live is empty and .current still names the source, so the
+# re-driven command's auto-save no-ops instead of propagating deletions.
+_recover_interrupted_switch() {
+  _parse_op_marker || return 0
+  if [[ "$_OP" != "use" ]]; then
+    # deactivate/unknown are recovered by their own command, not here.
+    _refuse_if_op_interrupted
+  fi
+  local dest
+  if [[ "$_OP_PHASE" == "saving" ]]; then
+    dest="$_OP_SOURCE"
+  else
+    dest="$_OP_TARGET"
+  fi
+  if [[ -z "$dest" || "$dest" =~ [^a-zA-Z0-9._-] || "$dest" == .* || "$dest" == -* ]]; then
+    err "Interrupted-operation marker is corrupt — inspect and remove $OP_MARKER_FILE manually"
+    exit 1
+  fi
+  if [[ "$_OP_PHASE" == "saving" ]]; then
+    warn "A previous switch away from $(_pname "$dest") was interrupted — recovering..."
+  else
+    warn "A previous switch to $(_pname "$dest") was interrupted — recovering..."
+  fi
+  _sweep_live_entries_to "$PROFILES_DIR/$dest"
+  _clear_op_marker
+}
+
 # Guard for use/new: when the auto-save will not run — no profile is current
 # (detached after deactivate), or .current names a profile dir that no longer
 # exists — loading a profile would destroy live config that is not saved in
@@ -39,10 +71,17 @@ cmd_new() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --force) force=true; shift ;;
-      *)       name="$1"; shift ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile new <name> [--force]"
+          exit 1
+        fi
+        name="$1"; shift ;;
     esac
   done
   _require_profile_name "$name" "claude-profile new <name> [--force]"
+  _refuse_if_op_interrupted
 
   # Capture before _ensure_original_backup — a pre-existing backup does NOT
   # cover config created later, so it can't justify wiping the live state.
@@ -63,6 +102,9 @@ cmd_new() {
   _guard_detached_live_state "$current" "$force" "$backup_preexisted"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
+    # Mark the saving phase BEFORE the first destructive move — a crash here
+    # recovers by sweeping the half-moved live state back to the source.
+    _mark_op use saving "$current" "$name"
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move
   fi
 
@@ -72,14 +114,22 @@ cmd_new() {
 
   _git_init "$profile_dir"
 
+  _mark_op use loading "$current" "$name"
   _load_profile_to_live "$profile_dir"
   set_current "$name"
+  _clear_op_marker
   ok "Created and activated $(_pname "$name") ${DIM}(clean)${NC}"
 }
 
 cmd_fork() {
   local name="${1:-}"
+  if [[ $# -gt 1 ]]; then
+    err "Unexpected argument: '$2'"
+    err "Usage: claude-profile fork <name>"
+    exit 1
+  fi
   _require_profile_name "$name" "claude-profile fork <name>"
+  _refuse_if_op_interrupted
   _ensure_original_backup
 
   local profile_dir="$PROFILES_DIR/$name"
@@ -119,7 +169,13 @@ cmd_use() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --force) force=true; shift ;;
-      *)       name="$1"; shift ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile use <name> [--force]"
+          exit 1
+        fi
+        name="$1"; shift ;;
     esac
   done
   _require_profile_name "$name" "claude-profile use <name> [--force]"
@@ -131,11 +187,24 @@ cmd_use() {
     exit 1
   fi
 
+  _recover_interrupted_switch
+
   local current
   current="$(get_current_validated)"
 
   if [[ "$current" == "$name" ]]; then
-    ok "$(_pname "$name") is already active"
+    if _live_state_nonempty || ! _dir_has_entries "$profile_dir"; then
+      ok "$(_pname "$name") is already active"
+      return
+    fi
+    # The live config is gone (e.g. an interrupted switch) but the profile
+    # still holds it — reload instead of pretending all is well.
+    warn "Live config is empty — reloading $(_pname "$name")"
+    _set_op_marker "use $name"
+    _load_profile_to_live "$profile_dir" --move
+    _clear_op_marker
+    ok "Active profile: $(_pname "$name")"
+    _show_profile_summary "$name"
     return
   fi
 
@@ -152,16 +221,21 @@ cmd_use() {
   # Pre-validate target profile before any destructive operations
   _validate_profile_for_load "$profile_dir" || exit 1
 
-  # Auto-save current profile before switching
+  # Auto-save current profile before switching. Mark the saving phase BEFORE
+  # the first destructive move so a crash mid-save recovers by sweeping the
+  # half-moved live state back to the source — never exact-sync-deleting it.
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving $(_pname "$current")..."
+    _mark_op use saving "$current" "$name"
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'" --move
   fi
 
   info "Switching to $(_pname "$name")..."
+  _mark_op use loading "$current" "$name"
   _load_profile_to_live "$profile_dir" --move
 
   set_current "$name"
+  _clear_op_marker
   ok "Active profile: $(_pname "$name")"
   _show_profile_summary "$name"
 }
@@ -170,13 +244,25 @@ cmd_save() {
   local name="" msg=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -m) msg="${2:?-m requires a message}"; shift 2 ;;
-      *)  name="$1"; shift ;;
+      -m)
+        if [[ $# -lt 2 ]]; then
+          err "-m requires a message"
+          exit 1
+        fi
+        msg="$2"; shift 2 ;;
+      *)
+        if [[ -n "$name" ]]; then
+          err "Unexpected argument: '$1'"
+          err "Usage: claude-profile save [name] [-m message]"
+          exit 1
+        fi
+        name="$1"; shift ;;
     esac
   done
 
   name="${name:-$(get_current_validated)}"
   _require_profile_name "$name" "claude-profile save [name] [-m message]"
+  _refuse_if_op_interrupted
   _ensure_original_backup
 
   local profile_dir="$PROFILES_DIR/$name"
@@ -242,6 +328,35 @@ cmd_deactivate() {
     esac
   done
 
+  # A deactivate that died mid-flight is recovered here. Any other interrupted
+  # operation must be recovered by its own command first.
+  #   phase=saving  — died during the outgoing --move; sweep the half-moved live
+  #                   state back to the source so its sole copy isn't lost, then
+  #                   fall through to a fresh deactivate (live is empty after).
+  #   phase=restore — died mid-restore; live holds a partial backup copy (not
+  #                   user data), so re-run the restore and skip the auto-save.
+  local resume_restore=false
+  _parse_op_marker || true
+  if [[ -n "$_OP" ]]; then
+    if [[ "$_OP" == "deactivate" && "$keep" != true ]]; then
+      if [[ "$_OP_PHASE" == "saving" ]]; then
+        local src="$_OP_SOURCE"
+        if [[ -z "$src" || "$src" =~ [^a-zA-Z0-9._-] || "$src" == .* || "$src" == -* ]]; then
+          err "Interrupted-operation marker is corrupt — inspect and remove $OP_MARKER_FILE manually"
+          exit 1
+        fi
+        warn "A previous deactivate was interrupted mid-save — recovering..."
+        _sweep_live_entries_to "$PROFILES_DIR/$src"
+        _clear_op_marker
+      else
+        warn "A previous deactivate was interrupted — completing the restore..."
+        resume_restore=true
+      fi
+    else
+      _refuse_if_op_interrupted
+    fi
+  fi
+
   local current
   current="$(get_current_validated)"
   local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
@@ -270,8 +385,16 @@ cmd_deactivate() {
       warn "No profile is active"; return
     fi
 
-    if [[ -n "$current" ]]; then
+    # Validate the backup BEFORE the destructive auto-save — a backup that
+    # cannot be loaded must be discovered while the live files are untouched
+    _validate_profile_for_load "$backup_dir" || return 1
+
+    if [[ "$resume_restore" == true ]]; then
+      : # live holds a partial restore — nothing of the user's to save
+    elif [[ -n "$current" ]]; then
       info "Saving $(_pname "$current")..."
+      # Saving phase marker BEFORE the first destructive move (see cmd_use).
+      _mark_op deactivate saving "$current" ""
       _save_current_to "$PROFILES_DIR/$current" "Auto-save before deactivate" --move
     elif _live_state_nonempty && ! _live_state_equals_dir "$backup_dir" && ! _live_state_saved_in_any_profile; then
       local detached_name detached_dir
@@ -283,9 +406,11 @@ cmd_deactivate() {
       _git_init "$detached_dir"
     fi
 
+    _set_op_marker "deactivate"
     info "Restoring original state..."
     _restore_from_backup
     clear_current
+    _clear_op_marker
     if [[ -n "$current" ]]; then
       ok "Deactivated $(_pname "$current"), restored original state"
     else
