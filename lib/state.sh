@@ -1,6 +1,12 @@
 # state.sh — Profile state: current profile, backup, directory management
 
-ensure_dir() { mkdir -p "$PROFILES_DIR"; }
+ensure_dir() {
+  mkdir -p "$PROFILES_DIR"
+  # Tighten the store root even if an older run (or install) created it with a
+  # looser umask — a 0700 root blocks other local users from traversing to the
+  # Git objects inside, which git itself writes group/world-readable.
+  chmod 700 "$PROFILES_DIR" 2>/dev/null || true
+}
 
 get_current() {
   if [[ -f "$CURRENT_FILE" ]]; then

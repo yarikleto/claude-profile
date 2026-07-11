@@ -9,6 +9,10 @@ set -euo pipefail
 # ~/.claude and .claude.json onto a user branch.
 unset $(git rev-parse --local-env-vars 2>/dev/null) 2>/dev/null || true
 
+# The store holds tracked settings/MCP config — secrets. Create every store
+# dir, temp, and Git object private to the owner. Set before any file is made.
+umask 077
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─── Load modules ──────────────────────────────────────────
