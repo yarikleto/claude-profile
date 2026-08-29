@@ -21,7 +21,7 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 │   ├── .git/
 │   ├── settings.json
 │   ├── projects/
-│   ├── .claude.json                        # stored copy of ~/.claude.json
+│   ├── .claude-profile-home.json           # stored copy of ~/.claude.json
 │   └── ...
 └── code-review/
     ├── .git/
@@ -32,9 +32,14 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 
 Profiles are stored in `~/.local/share/claude-profile/` (XDG-compliant), separate from `~/.claude/`. Each profile snapshots the **entire** `~/.claude/` directory plus `~/.claude.json`.
 
+Inside a stored profile, the home-level `~/.claude.json` is named
+`.claude-profile-home.json`. The reserved name keeps it separate from a payload
+file literally named `~/.claude/.claude.json`, which remains `.claude.json` at
+the profile root.
+
 ## Seed templates
 
-When you run `claude-profile new`, the new profile is seeded with files from `~/.local/share/claude-profile/.seed/`. This directory is created automatically during installation with minimal defaults (empty `settings.json` and `.claude.json`).
+When you run `claude-profile new`, the new profile is seeded with files from `~/.local/share/claude-profile/.seed/`. This directory is created automatically during installation with minimal defaults (empty `settings.json` and `.claude.json`). The seed keeps the familiar `.claude.json` template name; `new` stores that template as `.claude-profile-home.json` inside the profile.
 
 You can customize these templates:
 
@@ -52,7 +57,7 @@ Next time you run `new`, it will use your custom templates.
 
 Each profile has its own git history for tracking configuration changes. A static `.gitignore` excludes large data directories from git while still copying them between profiles:
 
-- **Git-tracked**: `settings.json`, `CLAUDE.md`, `agents/`, `skills/`, `rules/`, `keybindings.json`, `.claude.json`, etc.
+- **Git-tracked**: `settings.json`, `CLAUDE.md`, `agents/`, `skills/`, `rules/`, `keybindings.json`, `.claude-profile-home.json`, etc.
 - **Git-ignored** (still copied): `projects/`, `agent-memory/`, `todos/`, `plans/`, `tasks/`, `plugins/`, `history.jsonl`
 
 This means `history`, `diff`, and `restore` commands only operate on config files, while all data is still fully isolated between profiles.

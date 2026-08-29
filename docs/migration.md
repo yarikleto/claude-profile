@@ -101,15 +101,24 @@ mv ~/.claude/__profiles__ ~/.local/share/claude-profile
 
 **I ran `deactivate` (without --keep) and lost my config:**
 
-Your profile is still saved. Find it and copy the files back:
+Your profile is still saved. Find it and copy the files back. In the current
+store format, the home-level `~/.claude.json` uses a reserved filename inside
+the profile so it cannot collide with a payload file named
+`~/.claude/.claude.json`:
 
 ```bash
 ls ~/.local/share/claude-profile/
 # Find your profile name, then:
 cp ~/.local/share/claude-profile/YOUR_PROFILE/settings.json ~/.claude/settings.json
-cp ~/.local/share/claude-profile/YOUR_PROFILE/.claude.json ~/.claude.json
+cp ~/.local/share/claude-profile/YOUR_PROFILE/.claude-profile-home.json ~/.claude.json
 # ... etc for other files you need
 ```
+
+An unmigrated store created before format 2 may instead keep the home-level
+file at `YOUR_PROFILE/.claude.json`. Use that legacy path only when
+`.claude-profile-home.json` is absent and you know the store predates format 2.
+In a current store, the root `.claude.json` can be the distinct payload file
+that belongs at `~/.claude/.claude.json`.
 
 **I deleted the profiles directory and need my backup:**
 

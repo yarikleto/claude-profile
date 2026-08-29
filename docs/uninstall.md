@@ -20,12 +20,21 @@ If you already detached with `deactivate --keep`, the same command restores the 
 # (e.g. .credentials.json), which a bare * glob would skip
 mkdir -p ~/.claude
 cp -R ~/.local/share/claude-profile/.pre-profiles-backup/. ~/.claude/
-# .claude.json lives in $HOME, not inside ~/.claude/
-mv -f ~/.claude/.claude.json ~/.claude.json 2>/dev/null || true
+# The reserved file represents the home-level ~/.claude.json
+rm -f ~/.claude.json
+if [[ -f ~/.claude/.claude-profile-home.json ]]; then
+  mv -f ~/.claude/.claude-profile-home.json ~/.claude.json
+fi
 rm -f ~/.local/share/claude-profile/.current
 ```
 
 Not every file will exist — errors about missing ones are fine.
+
+An unmigrated backup created before store format 2 may keep the home-level file
+as `.claude.json` instead. Only for that legacy layout, and only when
+`.claude-profile-home.json` is absent, move `~/.claude/.claude.json` to
+`~/.claude.json`. In a current backup it can be a real payload file and must
+remain inside `~/.claude/`.
 
 ## Step 2: Remove the CLI
 

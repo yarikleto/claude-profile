@@ -68,11 +68,12 @@ Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 ├── .current                                # one line: name of active profile
 ├── .seed/                                  # templates for `new` (user-editable)
 │   ├── settings.json
-│   └── .claude.json
+│   └── .claude.json                        # template for ~/.claude.json
 ├── .pre-profiles-backup/                   # original state backup
 │   ├── settings.json
 │   ├── CLAUDE.md
 │   ├── projects/
+│   ├── .claude-profile-home.json           # stored copy of ~/.claude.json
 │   └── ...
 ├── statusline.sh                           # statusline script for Claude Code
 ├── default/                                # a profile
@@ -84,7 +85,7 @@ Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 │   ├── projects/
 │   ├── plugins/
 │   ├── history.jsonl
-│   ├── .claude.json                        #   stored copy of ~/.claude.json
+│   ├── .claude-profile-home.json           #   stored copy of ~/.claude.json
 │   └── ...
 └── code-review/                            # another profile
     └── ...
@@ -94,7 +95,14 @@ Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 
 Priority: `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME/claude-profile` > `$HOME/.local/share/claude-profile`
 
-The `~/.claude.json` file (MCP server config) lives in `$HOME`, not inside `~/.claude/`. It is stored as `.claude.json` inside each profile directory and copied to/from `$HOME/.claude.json` on switch.
+The home-level `~/.claude.json` file (including MCP server config) lives in
+`$HOME`, not inside `~/.claude/`. It is stored as
+`.claude-profile-home.json` inside each profile directory and copied to/from
+`$HOME/.claude.json` on switch. This reserved name is disjoint from a live
+payload file literally named `~/.claude/.claude.json`, which is stored at the
+profile root as `.claude.json`. Before format 2, the home-level file used that
+root `.claude.json` path; startup migration moves legacy stores to the reserved
+name.
 
 ## Full-directory snapshots
 
@@ -116,7 +124,7 @@ Creates a new profile from the current live state.
 1. _ensure_original_backup()     ← one-time backup + seed creation
 2. Auto-save current profile     ← if one is active (cp)
 3. mkdir profile dir
-4. _snapshot_current()           ← cp entire ~/.claude/ + ~/.claude.json to profile
+4. _snapshot_current()           ← cp ~/.claude/ + ~/.claude.json as .claude-profile-home.json
 5. _git_init()                   ← init git with static .gitignore
 6. set_current()
 ```
@@ -145,12 +153,12 @@ The core operation. Uses `--move` for speed.
 2. _validate_profile_for_load(target)   ← pre-check before destructive ops
 3. _save_current_to(current, --move)
    ├── mv all items: ~/.claude/ → current profile dir
-   ├── cp ~/.claude.json → current profile dir
+   ├── cp ~/.claude.json → current/.claude-profile-home.json
    └── git commit
 4. _load_profile_to_live(new, --move)
    ├── clear ~/.claude/
    ├── mv items: new profile dir → ~/.claude/
-   ├── cp .claude.json → ~/.claude.json
+   ├── cp new/.claude-profile-home.json → ~/.claude.json
 5. set_current(new)
 ```
 
@@ -161,7 +169,7 @@ Explicit save. Uses `cp` (user continues working).
 ```
 1. _save_current_to(current)
    ├── cp all items: ~/.claude/ → profile dir
-   ├── cp ~/.claude.json → profile dir
+   ├── cp ~/.claude.json → current/.claude-profile-home.json
    └── git commit
 ```
 
