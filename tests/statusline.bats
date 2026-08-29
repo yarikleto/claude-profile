@@ -90,3 +90,89 @@ load test_helper
   grep -Fq "\"command\": \"$CLAUDE_PROFILE_HOME/statusline.sh\"" \
     "$CLAUDE_CODE_HOME/settings.json"
 }
+
+# --- Generated status line script: model name extraction ---
+#
+# Claude Code pipes a JSON session payload to the script on stdin. The script
+# has no JSON parser (it runs on every assistant message and must stay
+# dependency-free), so these tests pin the shapes it has to survive.
+
+@test "statusline script: reads the model name from a compact payload" {
+  run_cli_ok statusline install
+  cat > "$BATS_TEST_TMPDIR/payload.json" <<'JSON'
+{"cwd":"/x","model":{"id":"claude-opus-5","display_name":"Opus 5"},"version":"2.1.220"}
+JSON
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Opus 5" ]
+}
+
+@test "statusline script: reads the model name from a pretty-printed payload" {
+  run_cli_ok statusline install
+  cat > "$BATS_TEST_TMPDIR/payload.json" <<'JSON'
+{
+  "cwd": "/x",
+  "model": {
+    "id": "claude-opus-5",
+    "display_name": "Opus 5"
+  },
+  "version": "2.1.220"
+}
+JSON
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Opus 5" ]
+}
+
+@test "statusline script: reads model.display_name, not an earlier display_name" {
+  run_cli_ok statusline install
+  cat > "$BATS_TEST_TMPDIR/payload.json" <<'JSON'
+{"agent":{"display_name":"Decoy Agent"},"model":{"id":"claude-opus-5","display_name":"Opus 5"}}
+JSON
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Opus 5" ]
+}
+
+@test "statusline script: prints Claude when the payload carries no model name" {
+  run_cli_ok statusline install
+  echo '{"cwd":"/x","version":"2.1.220"}' > "$BATS_TEST_TMPDIR/payload.json"
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Claude" ]
+}
+
+@test "statusline script: appends the active profile name" {
+  run_cli_ok fork work
+  run_cli_ok use work
+  run_cli_ok statusline install
+  echo '{"model":{"display_name":"Opus 5"}}' > "$BATS_TEST_TMPDIR/payload.json"
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Opus 5 · profile: work" ]
+}
+
+@test "statusline script: reads the model name when model holds a nested object" {
+  run_cli_ok statusline install
+  echo '{"model":{"caps":{"extended":true},"display_name":"Opus 5"}}' \
+    > "$BATS_TEST_TMPDIR/payload.json"
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Opus 5" ]
+}
+
+@test "statusline script: reads model.display_name, not a later display_name" {
+  run_cli_ok statusline install
+  echo '{"model":{"id":"m","display_name":"Opus 5"},"agent":{"display_name":"Decoy Agent"}}' \
+    > "$BATS_TEST_TMPDIR/payload.json"
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Opus 5" ]
+}
