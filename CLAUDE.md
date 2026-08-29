@@ -66,7 +66,7 @@ completions/
 
 ### Full-directory snapshots
 
-Profiles snapshot the **entire** `~/.claude/` directory plus `~/.claude.json`. There is no item-level tracking — every file in `~/.claude/` is captured. A static `.gitignore` excludes large data dirs from git tracking.
+Profiles snapshot the **entire** `~/.claude/` directory plus `~/.claude.json`. There is no item-level tracking for switching — every file in `~/.claude/` is captured. Git history selectively versions configuration plus durable memory (`agent-memory/**` and `projects/*/memory/**`), while project transcripts and the other listed bulk paths remain untracked. The managed `.gitignore` and explicit staging policy must stay in sync.
 
 During `use` (switch), pass `--move` to `_save_current_to` and `_load_profile_to_live` for speed. During `save`/`fork`, don't — let them copy.
 

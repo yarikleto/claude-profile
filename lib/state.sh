@@ -57,6 +57,12 @@ _release_lock() {
 }
 
 _acquire_lock() {
+  # Startup migration may acquire the store lock before dispatch discovers
+  # that the requested command is mutating. Re-entry by the same process is a
+  # no-op; the original ownership token and EXIT trap remain authoritative.
+  if [[ -n "$_LOCK_TOKEN" ]]; then
+    return 0
+  fi
   ensure_dir
   local lock="$PROFILES_DIR/.lock"
   _LOCK_TOKEN="$$-${RANDOM}${RANDOM}"
@@ -242,47 +248,128 @@ _ensure_seed_dir() {
 # ".claude.json" (which collided with a live file of the same name) to the
 # reserved CLAUDE_HOME_JSON name. The load path also tolerates the old layout,
 # so a store that misses this migration still loads correctly.
+#
+# Format 3: refresh each profile's tool-owned .gitignore so durable memory is
+# visible to Git. This deliberately does NOT commit: the active profile may be
+# moved-thin (its tracked payload is live in ~/.claude), and `git add -A` there
+# would record false mass deletions. The next real save/auto-save fills the
+# profile first and commits memory as a trustworthy baseline.
 _migrate_profile_to_format2() {
   local dir="$1"
   if [[ -e "$dir/.claude.json" && ! -d "$dir/.claude.json" && ! -e "$dir/$CLAUDE_HOME_JSON" ]]; then
     mv "$dir/.claude.json" "$dir/$CLAUDE_HOME_JSON" 2>/dev/null || return 1
-    if [[ -d "$dir/.git" ]]; then
-      _git_commit "$dir" "Store home file under a reserved name" 2>/dev/null || true
+    # Do not commit during startup migration: the active repo may be
+    # moved-thin. Its next normal save safely records the rename.
+  fi
+}
+
+_migrate_profile_to_format3() {
+  local dir="$1"
+  # A profile without history will receive the current policy if/when
+  # _git_init creates its repository. Do not create history during startup.
+  [[ -d "$dir/.git" ]] || return 0
+  _git_write_ignore_policy "$dir"
+}
+
+_read_store_format() {
+  local current=0
+  # The stamp is tool-owned. Never follow a symlink (which could both spoof a
+  # completed migration and redirect the later write outside the store).
+  if [[ ! -L "$STORE_FORMAT_FILE" && -f "$STORE_FORMAT_FILE" ]]; then
+    if ! current="$(cat "$STORE_FORMAT_FILE" 2>/dev/null)"; then
+      current=0
     fi
+  fi
+  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  printf '%s\n' "$current"
+}
+
+_write_store_format() {
+  local tmp
+  if [[ -e "$STORE_FORMAT_FILE" && ! -f "$STORE_FORMAT_FILE" && ! -L "$STORE_FORMAT_FILE" ]]; then
+    return 1
+  fi
+  if ! tmp="$(mktemp "$PROFILES_DIR/.format.XXXXXX")"; then
+    return 1
+  fi
+  if ! printf '%s\n' "$STORE_FORMAT" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if [[ -L "$STORE_FORMAT_FILE" ]] && ! rm -f "$STORE_FORMAT_FILE"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! mv -f "$tmp" "$STORE_FORMAT_FILE"; then
+    rm -f "$tmp"
+    return 1
   fi
 }
 
 _migrate_store_format() {
   [[ -d "$PROFILES_DIR" ]] || return 0
-  local current=0
-  if [[ -f "$STORE_FORMAT_FILE" ]]; then
-    current="$(cat "$STORE_FORMAT_FILE" 2>/dev/null || echo 0)"
-  fi
-  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  local current
+  current="$(_read_store_format)"
   if [[ "$current" -ge "$STORE_FORMAT" ]]; then
     return 0
   fi
 
-  local dir base
+  # A switch/deactivate can leave both live and stored trees partial. Let its
+  # recovery path finish before touching profile metadata; the next invocation
+  # retries because the old format stamp is intentionally left in place.
+  if [[ -e "$OP_MARKER_FILE" ]]; then
+    return 1
+  fi
+
+  local dir base failed=0
   for dir in "$PROFILES_DIR"/* "$PROFILES_DIR/.pre-profiles-backup"; do
-    [[ -d "$dir" ]] || continue
+    [[ -d "$dir" && ! -L "$dir" ]] || continue
     base="$(basename "$dir")"
     # Only real profiles and the backup — skip store metadata (.seed, .lock, …)
     if [[ "$base" == .* && "$base" != ".pre-profiles-backup" ]]; then
       continue
     fi
-    # Best-effort per profile: an un-migratable dir (odd perms, etc.) falls back
-    # to the tolerant load path rather than blocking the rest.
-    _migrate_profile_to_format2 "$dir" || true
+    if [[ "$current" -lt 2 ]]; then
+      # Format 2's load path is tolerant, but keep the old stamp when a write
+      # fails so a future invocation can retry it.
+      _migrate_profile_to_format2 "$dir" || failed=1
+    fi
+    if [[ "$current" -lt 3 && "$base" != ".pre-profiles-backup" ]]; then
+      _migrate_profile_to_format3 "$dir" || failed=1
+    fi
   done
 
-  printf '%s\n' "$STORE_FORMAT" > "$STORE_FORMAT_FILE"
+  [[ "$failed" -eq 0 ]] || return 1
+  _write_store_format
+}
+
+_store_needs_migration() {
+  [[ -d "$PROFILES_DIR" ]] || return 1
+  local current
+  current="$(_read_store_format)"
+  [[ "$current" -lt "$STORE_FORMAT" ]]
+}
+
+_refuse_newer_store_format_for_write() {
+  local current
+  current="$(_read_store_format)"
+  if [[ "$current" -gt "$STORE_FORMAT" ]]; then
+    err "Profile store uses newer store format $current (this version supports $STORE_FORMAT)"
+    err "Upgrade claude-profile before running a command that changes profiles"
+    exit 1
+  fi
 }
 
 _ensure_original_backup() {
   ensure_dir
   _backup_raw_state
   _ensure_seed_dir
+  # A store created during this invocation did not exist when startup
+  # migration ran. Stamp its current layout so the next command never treats
+  # a new backup/profile as a legacy one.
+  if [[ "$STORE_EXISTED_AT_STARTUP" != true && ! -e "$STORE_FORMAT_FILE" ]]; then
+    _write_store_format
+  fi
 }
 
 # Validate that a profile name is safe (whitelist approach).

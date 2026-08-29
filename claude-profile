@@ -26,15 +26,18 @@ source "$SCRIPT_DIR/commands/info.sh"
 source "$SCRIPT_DIR/commands/history.sh"
 source "$SCRIPT_DIR/commands/ui.sh"
 
-# Bring an existing store up to the current on-disk format before any command
-# reads or writes profiles. Idempotent (runs once per upgrade via a stamp).
-# Best-effort: the load path tolerates the old layout, so an odd profile dir
-# that can't be migrated must not abort (and thereby brick) every command.
-_migrate_store_format || true
-
 # ─── Dispatch ──────────────────────────────────────────────
 cmd="${1:-help}"
 shift 2>/dev/null || true
+
+# Bring an existing store up to the current on-disk format before any command
+# reads or writes profiles. Migration mutates profile metadata, so it uses the
+# same exclusive lock as normal writes. A failed refresh leaves the old stamp
+# in place for a later retry; command paths still self-heal before Git commits.
+if _store_needs_migration; then
+  _acquire_lock
+  _migrate_store_format || true
+fi
 
 # Mutating commands take an exclusive lock — concurrent invocations interleave
 # rm/mv on the same live files and can destroy the sole copy of moved data.
@@ -42,7 +45,10 @@ shift 2>/dev/null || true
 # settings.json, so it can race a switch without the lock. Locking its bare
 # usage path too is harmless.
 case "$cmd" in
-  new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore|statusline) _acquire_lock ;;
+  new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore|statusline)
+    _acquire_lock
+    _refuse_newer_store_format_for_write
+    ;;
 esac
 
 case "$cmd" in

@@ -8,6 +8,10 @@ setup_bulk_data() {
   echo '{"transcript": true}' > "$CLAUDE_CODE_HOME/projects/my-project/session.jsonl"
   mkdir -p "$CLAUDE_CODE_HOME/projects/my-project/memory"
   echo "user likes TDD" > "$CLAUDE_CODE_HOME/projects/my-project/memory/user.md"
+  mkdir -p "$CLAUDE_CODE_HOME/projects/my-project/memory/topics/nested"
+  echo "nested durable memory" > "$CLAUDE_CODE_HOME/projects/my-project/memory/topics/nested/detail.md"
+  mkdir -p "$CLAUDE_CODE_HOME/projects/my-project/session/tool-results"
+  echo "large disposable output" > "$CLAUDE_CODE_HOME/projects/my-project/session/tool-results/result.txt"
 
   # agent-memory/
   mkdir -p "$CLAUDE_CODE_HOME/agent-memory/my-agent"
@@ -39,6 +43,8 @@ setup_bulk_data() {
 
   [ -f "$(profile_dir myprofile)/projects/my-project/session.jsonl" ]
   [ -f "$(profile_dir myprofile)/projects/my-project/memory/user.md" ]
+  [ -f "$(profile_dir myprofile)/projects/my-project/memory/topics/nested/detail.md" ]
+  [ -f "$(profile_dir myprofile)/projects/my-project/session/tool-results/result.txt" ]
   [ -f "$(profile_dir myprofile)/agent-memory/my-agent/data.txt" ]
   [ -f "$(profile_dir myprofile)/todos/task1.json" ]
   [ -f "$(profile_dir myprofile)/plans/plan1.json" ]
@@ -145,17 +151,20 @@ setup_bulk_data() {
   ! [ -f "$CLAUDE_CODE_HOME/todos/task1.json" ]
 }
 
-@test "bulk items are not in git history" {
+@test "durable memory is tracked while disposable bulk items stay ignored" {
   setup_bulk_data
   run_cli_ok fork myprofile
 
   local tracked
   tracked="$(git -C "$(profile_dir myprofile)" ls-files)"
-  ! [[ "$tracked" == *"projects/"* ]]
+  [[ "$tracked" == *"projects/my-project/memory/user.md"* ]]
+  [[ "$tracked" == *"projects/my-project/memory/topics/nested/detail.md"* ]]
+  [[ "$tracked" == *"agent-memory/my-agent/data.txt"* ]]
+  ! [[ "$tracked" == *"projects/my-project/session.jsonl"* ]]
+  ! [[ "$tracked" == *"projects/my-project/session/tool-results/result.txt"* ]]
   ! [[ "$tracked" == *"todos/"* ]]
   ! [[ "$tracked" == *"plans/"* ]]
   ! [[ "$tracked" == *"tasks/"* ]]
-  ! [[ "$tracked" == *"agent-memory/"* ]]
 }
 
 @test "isolation: bulk items are fully independent between profiles" {

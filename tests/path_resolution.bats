@@ -69,6 +69,19 @@ load test_helper
   [ -d "$real/default" ]
 }
 
+@test "path: diff works with a relative profile store" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory"
+  echo v1 > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  cd "$BATS_TEST_TMPDIR"
+  export CLAUDE_PROFILE_HOME="relative-store"
+  run_cli_ok fork default
+
+  echo v2 > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  run_cli diff
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"projects/-repo/memory/MEMORY.md"* ]]
+}
+
 @test "path: save refuses a symlinked profile root and never touches its target" {
   run_cli_ok fork real
   local ext="$BATS_TEST_TMPDIR/external"

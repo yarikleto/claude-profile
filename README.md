@@ -5,7 +5,7 @@
 <br>
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yarikleto/claude-profile/tests.yml?branch=main&label=CI&logo=github&logoColor=white)](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml)
-[![Test count](https://img.shields.io/badge/tests-290%20passing-brightgreen?logo=github&logoColor=white)](tests/)
+[![Test count](https://img.shields.io/badge/tests-318%20passing-brightgreen?logo=github&logoColor=white)](tests/)
 [![CLI version](https://img.shields.io/github/v/tag/yarikleto/claude-profile?label=CLI&sort=semver&filter=v*&color=18182f)](https://github.com/yarikleto/claude-profile/tags)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)](#install)
 [![Shell: Bash](https://img.shields.io/badge/shell-Bash-4EAA25?logo=gnubash&logoColor=white)](claude-profile)
@@ -153,7 +153,10 @@ claude-profile use work --force   # drop it: switch and discard the detached cha
 
 ### Version history
 
-Every profile has built-in git history. Each save is a commit.
+Every profile has built-in git history. Each save is a commit. History covers
+configuration plus Claude Code's durable memory (`agent-memory/` and
+`projects/*/memory/`). Session transcripts and other disposable project data
+still switch with the profile, but stay out of Git history.
 
 ```
 save [-m "message"]     Save current state with a commit message
@@ -170,6 +173,15 @@ $ claude-profile history
 
 $ claude-profile restore a24a13b
 ```
+
+When upgrading an existing profile, the first save establishes its earliest
+recoverable memory baseline. If you restore a commit from before memory
+tracking existed, claude-profile preserves the current memory and warns instead
+of treating its absence from that old commit as a deletion.
+
+Profile histories stay local and are not uploaded by claude-profile. They are
+plaintext, though, and deleted memory remains in local Git history until that
+history or the profile is removed.
 
 ### Status line
 

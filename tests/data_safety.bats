@@ -675,14 +675,14 @@ JSON
   [[ "$log" != *"my personal config"* ]]
 }
 
-@test "fork: profile keeps the static .gitignore even when ~/.claude has a .git" {
+@test "fork: profile keeps the managed .gitignore even when ~/.claude has a .git" {
   git -C "$CLAUDE_CODE_HOME" init -q
   git -C "$CLAUDE_CODE_HOME" add -A
   git -C "$CLAUDE_CODE_HOME" commit -q -m "my personal config"
 
   run_cli_ok fork myprofile
 
-  # The static .gitignore must be present so large data dirs stay untracked
+  # The managed policy must be present so session data stays untracked.
   [ -f "$(profile_dir myprofile)/.gitignore" ]
   grep -q '/projects' "$(profile_dir myprofile)/.gitignore"
 }
