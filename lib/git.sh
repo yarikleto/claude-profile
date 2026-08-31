@@ -405,14 +405,19 @@ _git_commit_history_transaction() {
 }
 
 _git_init() {
-  local dir="$1"
+  local dir="$1" payload_state="${2:-}"
   _assert_profile_path_safe "$dir"
   if [[ -e "$dir/.git" || -L "$dir/.git" ]]; then
     _git_require_safe_profile_repo "$dir" || return 1
   fi
-  if ! _repair_profile_symlinks "$dir"; then
-    _git_history_warn "$dir" "could not dereference profile symlinks"
-    return 1
+  # A caller may skip the walk only after replacing the complete payload with
+  # cp -RL output. Move/direct-commit paths can still contain live symlinks and
+  # must retain the full repair before Git sees the worktree.
+  if [[ "$payload_state" != "--payload-materialized" ]]; then
+    if ! _repair_profile_symlinks "$dir"; then
+      _git_history_warn "$dir" "could not dereference profile symlinks"
+      return 1
+    fi
   fi
   if ! _git_write_ignore_policy "$dir"; then
     _git_history_warn "$dir" "could not update .gitignore"
@@ -431,17 +436,20 @@ _git_init() {
 _git_commit() {
   local dir="$1"
   local msg="${2:-Save}"
+  local payload_state="${3:-}"
   _assert_profile_path_safe "$dir"
   if [[ ! -e "$dir/.git" && ! -L "$dir/.git" ]]; then
-    if ! _git_init "$dir"; then
+    if ! _git_init "$dir" "$payload_state"; then
       return 1
     fi
     return 0
   fi
   _git_require_safe_profile_repo "$dir" || return 1
-  if ! _repair_profile_symlinks "$dir"; then
-    _git_history_warn "$dir" "could not dereference profile symlinks"
-    return 1
+  if [[ "$payload_state" != "--payload-materialized" ]]; then
+    if ! _repair_profile_symlinks "$dir"; then
+      _git_history_warn "$dir" "could not dereference profile symlinks"
+      return 1
+    fi
   fi
   if ! _git_write_ignore_policy "$dir"; then
     _git_history_warn "$dir" "could not update .gitignore"

@@ -153,6 +153,40 @@ load test_helper
   [ ! -L "$stored" ]
 }
 
+@test "save: skips the redundant profile walk after copy materializes symlinks" {
+  run_cli_ok fork materialized-save
+
+  local target_file="$BATS_TEST_TMPDIR/materialized-target.txt"
+  local profile_dir_path="$(profile_dir materialized-save)"
+  local wrapper_dir="$BATS_TEST_TMPDIR/materialized-find-wrapper"
+  local profile_walk="$BATS_TEST_TMPDIR/profile-walk-observed"
+  local real_find
+  real_find="$(command -v find)"
+  echo "MATERIALIZED CONTENT" > "$target_file"
+  ln -s "$target_file" "$CLAUDE_CODE_HOME/skills/my-skill/linked.md"
+  mkdir -p "$wrapper_dir"
+  cat > "$wrapper_dir/find" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "$PROFILE_DIR_FOR_TEST" ]]; then
+  : > "$PROFILE_WALK_FOR_TEST"
+fi
+exec "$REAL_FIND_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/find"
+
+  run env PATH="$wrapper_dir:$PATH" \
+    REAL_FIND_FOR_TEST="$real_find" \
+    PROFILE_DIR_FOR_TEST="$profile_dir_path" \
+    PROFILE_WALK_FOR_TEST="$profile_walk" \
+    /bin/bash "$CLAUDE_PROFILE" save -m materialized-copy
+
+  [ "$status" -eq 0 ]
+  [ ! -e "$profile_walk" ]
+  [ ! -L "$profile_dir_path/skills/my-skill/linked.md" ]
+  [ "$(git -C "$profile_dir_path" show HEAD:skills/my-skill/linked.md)" = \
+    "MATERIALIZED CONTENT" ]
+}
+
 @test "use: auto-repairs top-level symlink in profile" {
   run_cli_ok fork symusetest
   run_cli_ok fork other

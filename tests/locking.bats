@@ -286,6 +286,56 @@ EOF
   done
 }
 
+@test "lock acquisition sweeps only pending metadata owned by dead processes" {
+  run_cli_ok fork default
+  local dead_pid
+  dead_pid="$(bash -c 'echo $$')"
+  ! kill -0 "$dead_pid" 2>/dev/null
+
+  # Legacy temp names carry ownership only in their contents.
+  printf '%s\n' "$dead_pid" > \
+    "$CLAUDE_PROFILE_HOME/.lock-pid.legacy-dead"
+  printf '%s\n' "${dead_pid}-12345" > \
+    "$CLAUDE_PROFILE_HOME/.lock-token.legacy-dead"
+  # New names carry the PID too, covering SIGKILL before the first write.
+  : > "$CLAUDE_PROFILE_HOME/.lock-pid.$dead_pid.unwritten"
+  : > "$CLAUDE_PROFILE_HOME/.lock-token.$dead_pid.unwritten"
+
+  printf '%s\n' "$$" > "$CLAUDE_PROFILE_HOME/.lock-pid.legacy-live"
+  printf '%s\n' "$$-12345" > \
+    "$CLAUDE_PROFILE_HOME/.lock-token.legacy-live"
+  : > "$CLAUDE_PROFILE_HOME/.lock-pid.$$.unwritten"
+  : > "$CLAUDE_PROFILE_HOME/.lock-token.$$.unwritten"
+  echo unknown > "$CLAUDE_PROFILE_HOME/.lock-pid.unknown-owner"
+  local canary="$BATS_TEST_TMPDIR/lock-temp-canary"
+  echo canary > "$canary"
+  ln -s "$canary" "$CLAUDE_PROFILE_HOME/.lock-pid.$dead_pid.symlink"
+
+  # A PID embedded before the first content write still protects a genuinely
+  # live initializer from speculative takeover and cleanup.
+  mkdir "$CLAUDE_PROFILE_HOME/.lock"
+  run_cli save -m must-not-steal-pending-owner
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"in progress (pid $$)"* ]]
+  [ -f "$CLAUDE_PROFILE_HOME/.lock-pid.$$.unwritten" ]
+  rmdir "$CLAUDE_PROFILE_HOME/.lock"
+
+  echo '{"swept": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m sweep-dead-lock-temps
+
+  [ ! -e "$CLAUDE_PROFILE_HOME/.lock-pid.legacy-dead" ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.lock-token.legacy-dead" ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.lock-pid.$dead_pid.unwritten" ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.lock-token.$dead_pid.unwritten" ]
+  [ -f "$CLAUDE_PROFILE_HOME/.lock-pid.legacy-live" ]
+  [ -f "$CLAUDE_PROFILE_HOME/.lock-token.legacy-live" ]
+  [ -f "$CLAUDE_PROFILE_HOME/.lock-pid.$$.unwritten" ]
+  [ -f "$CLAUDE_PROFILE_HOME/.lock-token.$$.unwritten" ]
+  [ -f "$CLAUDE_PROFILE_HOME/.lock-pid.unknown-owner" ]
+  [ -L "$CLAUDE_PROFILE_HOME/.lock-pid.$dead_pid.symlink" ]
+  [ "$(cat "$canary")" = canary ]
+}
+
 @test "an idle read migration releases its lock before command dispatch" {
   run_cli_ok fork default
   echo 2 > "$CLAUDE_PROFILE_HOME/.format"

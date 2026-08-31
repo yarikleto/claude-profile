@@ -60,6 +60,68 @@ _release_lock() {
   return 0
 }
 
+# Resolve the process that owns pending lock metadata. New temp names embed the
+# PID so a SIGKILL between mktemp and the first write is still recoverable;
+# contents remain authoritative for older temp names.
+_lock_temp_owner_pid() {
+  local pending="$1" base value="" pid="" remainder=""
+  if [[ -L "$pending" || ! -f "$pending" ]]; then
+    return 1
+  fi
+  base="${pending##*/}"
+  case "$base" in
+    .lock-pid.*)
+      remainder="${base#.lock-pid.}"
+      if [[ "$remainder" == *.* && \
+            "${remainder%%.*}" =~ ^[0-9]+$ ]]; then
+        pid="${remainder%%.*}"
+      else
+        value="$(cat "$pending" 2>/dev/null || true)"
+        if [[ "$value" =~ ^[0-9]+$ ]]; then
+          pid="$value"
+        fi
+      fi
+      ;;
+    .lock-token.*)
+      remainder="${base#.lock-token.}"
+      if [[ "$remainder" == *.* && \
+            "${remainder%%.*}" =~ ^[0-9]+$ ]]; then
+        pid="${remainder%%.*}"
+      else
+        value="$(cat "$pending" 2>/dev/null || true)"
+        if [[ "$value" =~ ^[0-9]+-[0-9]+$ ]]; then
+          pid="${value%%-*}"
+        fi
+      fi
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  if [[ -z "$pid" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$pid"
+}
+
+# Best-effort cleanup for metadata whose owner is provably gone. A live or
+# unknown owner is deliberately retained: PID reuse can cause harmless litter,
+# but must never make cleanup race a real lock initializer.
+_cleanup_stale_lock_temps() {
+  local pending pid
+  for pending in \
+      "$PROFILES_DIR"/.lock-pid.* \
+      "$PROFILES_DIR"/.lock-token.*; do
+    if ! pid="$(_lock_temp_owner_pid "$pending")"; then
+      continue
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      rm -f -- "$pending" 2>/dev/null || true
+    fi
+  done
+  return 0
+}
+
 # Return the pid of a live process that is between creating the lock directory
 # and atomically publishing its pid into it. The pid temp exists before mkdir;
 # renaming it into the lock has no instant where neither path exists. This
@@ -68,11 +130,8 @@ _release_lock() {
 _pending_lock_owner_pid() {
   local pending pid
   for pending in "$PROFILES_DIR"/.lock-pid.*; do
-    if [[ -L "$pending" || ! -f "$pending" ]]; then
-      continue
-    fi
-    pid="$(cat "$pending" 2>/dev/null || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    if pid="$(_lock_temp_owner_pid "$pending")" && \
+       kill -0 "$pid" 2>/dev/null; then
       printf '%s\n' "$pid"
       return 0
     fi
@@ -124,12 +183,12 @@ _try_acquire_lock() {
 
   # Prepare the pid first: while a successful mkdir owner is paused before
   # publication, contenders can still identify this live initialization.
-  pid_tmp="$(mktemp "$PROFILES_DIR/.lock-pid.XXXXXX" 2>/dev/null)" || return 1
+  pid_tmp="$(mktemp "$PROFILES_DIR/.lock-pid.$$.XXXXXX" 2>/dev/null)" || return 1
   if ! printf '%s\n' "$$" 2>/dev/null > "$pid_tmp"; then
     rm -f "$pid_tmp"
     return 1
   fi
-  if ! token_tmp="$(mktemp "$PROFILES_DIR/.lock-token.XXXXXX" 2>/dev/null)"; then
+  if ! token_tmp="$(mktemp "$PROFILES_DIR/.lock-token.$$.XXXXXX" 2>/dev/null)"; then
     rm -f "$pid_tmp"
     return 1
   fi
@@ -174,6 +233,9 @@ _try_acquire_lock() {
   trap _release_lock EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  # Ownership is now serialized. Clean only metadata whose process is proven
+  # dead; live contenders and unknown entries remain untouched.
+  _cleanup_stale_lock_temps
   return 0
 }
 

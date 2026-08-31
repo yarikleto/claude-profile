@@ -315,7 +315,13 @@ _save_current_to() {
   else
     rm -rf "$dst_home"
   fi
-  _git_commit "$dst" "$msg"
+  if [[ "$move" == "--move" ]]; then
+    _git_commit "$dst" "$msg"
+  else
+    # Every payload entry was replaced from cp -RL output above, so no symlink
+    # can remain outside the separately managed .git/.gitignore metadata.
+    _git_commit "$dst" "$msg" --payload-materialized
+  fi
 }
 
 # Move live entries into a profile directory WITHOUT removing anything else
