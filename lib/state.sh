@@ -204,6 +204,7 @@ _acquire_lock() {
         local pending_pid=""
         if pending_pid="$(_pending_lock_owner_pid)"; then
           err "Another claude-profile operation is in progress (pid $pending_pid)"
+          err "If that is wrong, remove $lock"
         else
           err "Profile lock metadata is incomplete; refusing unsafe takeover"
           err "If no claude-profile process is starting, remove $lock"

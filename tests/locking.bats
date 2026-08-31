@@ -384,6 +384,7 @@ EOF
     /bin/bash "$CLAUDE_PROFILE" save -m contender
   [ "$status" -ne 0 ]
   [[ "$output" == *"in progress"* ]]
+  [[ "$output" == *"If that is wrong, remove $CLAUDE_PROFILE_HOME/.lock"* ]]
   kill -0 "$owner_pid"
 
   touch "$gate"
