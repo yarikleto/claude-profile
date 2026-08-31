@@ -59,6 +59,17 @@ EOF
     projects/-repo/memory/MEMORY.md >/dev/null
 }
 
+@test "first-command statusline install stamps a newly created store" {
+  [ ! -e "$CLAUDE_PROFILE_HOME" ]
+
+  run_cli_ok statusline install
+
+  [ "$(cat "$CLAUDE_PROFILE_HOME/.format")" = 3 ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.lock" ]
+  [ -x "$CLAUDE_PROFILE_HOME/statusline.sh" ]
+  grep -q '"statusLine"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
 @test "history policy handles nested and git-special memory path names" {
   local project='-:(repo) [demo]'
   local agent='-:(agent) [demo]'
@@ -78,6 +89,387 @@ EOF
   git -C "$dir" ls-files --error-unmatch -- \
     "agent-memory/$agent/nested/$odd_name" >/dev/null
   git -C "$dir" check-ignore -q -- "projects/$project/session.jsonl"
+}
+
+@test "switch save dereferences symlinked memory roots before recording history" {
+  local external="$BATS_TEST_TMPDIR/external-roots"
+  mkdir -p "$external/projects/-repo/memory"
+  mkdir -p "$external/agent-memory/researcher"
+  echo auto-v1 > "$external/projects/-repo/memory/MEMORY.md"
+  echo session > "$external/projects/-repo/session.jsonl"
+  echo agent-v1 > "$external/agent-memory/researcher/MEMORY.md"
+  ln -s "$external/projects" "$CLAUDE_CODE_HOME/projects"
+  ln -s "$external/agent-memory" "$CLAUDE_CODE_HOME/agent-memory"
+
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  local dir before_count
+  dir="$(profile_dir beta)"
+  before_count="$(git -C "$dir" rev-list --count HEAD)"
+
+  echo auto-v2 > "$external/projects/-repo/memory/MEMORY.md"
+  echo agent-v2 > "$external/agent-memory/researcher/MEMORY.md"
+  run_cli_ok use alpha
+
+  [[ "$output" != *"history skipped"* ]]
+  [ ! -L "$dir/projects" ]
+  [ ! -L "$dir/agent-memory" ]
+  [ "$(git -C "$dir" show HEAD:projects/-repo/memory/MEMORY.md)" = auto-v2 ]
+  [ "$(git -C "$dir" show HEAD:agent-memory/researcher/MEMORY.md)" = agent-v2 ]
+  [ "$(git -C "$dir" rev-list --count HEAD)" -eq $((before_count + 1)) ]
+  [ -z "$(git -C "$dir" status --porcelain=v1)" ]
+}
+
+@test "switch save dereferences symlinked project and memory children" {
+  local external="$BATS_TEST_TMPDIR/external-children"
+  mkdir -p "$external/project/memory"
+  mkdir -p "$external/memory"
+  mkdir -p "$external/agent"
+  echo project-v1 > "$external/project/memory/MEMORY.md"
+  echo memory-v1 > "$external/memory/MEMORY.md"
+  echo agent-v1 > "$external/agent/MEMORY.md"
+
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-real"
+  mkdir -p "$CLAUDE_CODE_HOME/agent-memory"
+  ln -s "$external/project" "$CLAUDE_CODE_HOME/projects/-linked"
+  ln -s "$external/memory" "$CLAUDE_CODE_HOME/projects/-real/memory"
+  ln -s "$external/agent" "$CLAUDE_CODE_HOME/agent-memory/researcher"
+
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  local dir
+  dir="$(profile_dir beta)"
+
+  echo project-v2 > "$external/project/memory/MEMORY.md"
+  echo memory-v2 > "$external/memory/MEMORY.md"
+  echo agent-v2 > "$external/agent/MEMORY.md"
+  run_cli_ok use alpha
+
+  [[ "$output" != *"history skipped"* ]]
+  [ ! -L "$dir/projects/-linked" ]
+  [ ! -L "$dir/projects/-real/memory" ]
+  [ ! -L "$dir/agent-memory/researcher" ]
+  [ "$(git -C "$dir" show HEAD:projects/-linked/memory/MEMORY.md)" = project-v2 ]
+  [ "$(git -C "$dir" show HEAD:projects/-real/memory/MEMORY.md)" = memory-v2 ]
+  [ "$(git -C "$dir" show HEAD:agent-memory/researcher/MEMORY.md)" = agent-v2 ]
+  [ -z "$(git -C "$dir" status --porcelain=v1)" ]
+}
+
+@test "failed history staging leaves the real index byte-for-byte unchanged" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory"
+  mkdir -p "$CLAUDE_CODE_HOME/agent-memory/researcher"
+  echo auto > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  echo agent > "$CLAUDE_CODE_HOME/agent-memory/researcher/MEMORY.md"
+  run_cli_ok fork default
+
+  local dir before_index before_head
+  dir="$(profile_dir default)"
+  before_index="$BATS_TEST_TMPDIR/index.before"
+  cp "$dir/.git/index" "$before_index"
+  before_head="$(git -C "$dir" rev-parse HEAD)"
+
+  echo 'blocked.txt filter=reject-history-test' > "$CLAUDE_CODE_HOME/.gitattributes"
+  echo blocked > "$CLAUDE_CODE_HOME/blocked.txt"
+  git -C "$dir" config filter.reject-history-test.clean false
+  git -C "$dir" config filter.reject-history-test.required true
+
+  run_cli save -m rejected
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"history skipped"* ]]
+  cmp -s "$before_index" "$dir/.git/index"
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$before_head" ]
+  git -C "$dir" diff --cached --quiet
+}
+
+@test "successful no-change staging repairs an already polluted real index" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory"
+  mkdir -p "$CLAUDE_CODE_HOME/agent-memory/researcher"
+  echo auto > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  echo agent > "$CLAUDE_CODE_HOME/agent-memory/researcher/MEMORY.md"
+  run_cli_ok fork default
+
+  local dir before_count
+  dir="$(profile_dir default)"
+  before_count="$(git -C "$dir" rev-list --count HEAD)"
+  git -C "$dir" rm -r -f --cached -- projects agent-memory >/dev/null
+  ! git -C "$dir" diff --cached --quiet
+
+  run_cli_ok save -m no-change
+  git -C "$dir" diff --cached --quiet
+  [ "$(git -C "$dir" rev-list --count HEAD)" -eq "$before_count" ]
+  git -C "$dir" ls-files --error-unmatch -- \
+    projects/-repo/memory/MEMORY.md >/dev/null
+  git -C "$dir" ls-files --error-unmatch -- \
+    agent-memory/researcher/MEMORY.md >/dev/null
+}
+
+@test "save keeps git subprocess fanout bounded for config-heavy profiles" {
+  mkdir -p "$CLAUDE_CODE_HOME/skills/heavy"
+  local i
+  for ((i = 0; i < 600; i++)); do
+    printf 'skill %s\n' "$i" > \
+      "$CLAUDE_CODE_HOME/skills/heavy/skill-$i.md"
+  done
+  run_cli_ok fork default
+
+  local wrapper_dir real_git counter
+  wrapper_dir="$BATS_TEST_TMPDIR/bounded-git-fanout"
+  counter="$BATS_TEST_TMPDIR/git-add-count"
+  mkdir "$wrapper_dir"
+  real_git="$(command -v git)"
+  echo 0 > "$counter"
+  cat > "$wrapper_dir/git" <<'EOF'
+#!/usr/bin/env bash
+is_add=false
+for arg in "$@"; do
+  if [[ "$arg" == add ]]; then
+    is_add=true
+    break
+  fi
+done
+if [[ "$is_add" == true ]]; then
+  count="$(cat "$GIT_ADD_COUNTER_FOR_TEST")"
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$GIT_ADD_COUNTER_FOR_TEST"
+  if [[ "$count" -gt 8 ]]; then
+    echo "excessive git add subprocess fanout" >&2
+    exit 98
+  fi
+fi
+exec "$REAL_GIT_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/git"
+
+  echo '{"bounded_fanout": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run env PATH="$wrapper_dir:$PATH" REAL_GIT_FOR_TEST="$real_git" \
+    GIT_ADD_COUNTER_FOR_TEST="$counter" \
+    /bin/bash "$CLAUDE_PROFILE" save -m bounded-fanout
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"history skipped"* ]]
+  [ "$(cat "$counter")" -le 8 ]
+  git -C "$(profile_dir default)" show HEAD:settings.json | \
+    grep -q bounded_fanout
+}
+
+@test "failed index publication cannot advance HEAD or replace the real index" {
+  run_cli_ok fork default
+  local dir before_index before_head wrapper_dir real_mv
+  dir="$(profile_dir default)"
+  before_index="$BATS_TEST_TMPDIR/index-before-publication"
+  cp "$dir/.git/index" "$before_index"
+  before_head="$(git -C "$dir" rev-parse HEAD)"
+  wrapper_dir="$BATS_TEST_TMPDIR/fail-index-publication"
+  real_mv="$(command -v mv)"
+  mkdir -p "$wrapper_dir"
+  cat > "$wrapper_dir/mv" <<'EOF'
+#!/usr/bin/env bash
+source_path="${@: -2:1}"
+destination="${@: -1}"
+if [[ "$source_path" == *'/.git/.claude-profile-index.'* && \
+      "$destination" == */.git/index ]]; then
+  echo "simulated index publication failure" >&2
+  exit 94
+fi
+exec "$REAL_MV_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/mv"
+
+  echo '{"publication": "must-be-atomic"}' > "$CLAUDE_CODE_HOME/settings.json"
+  run env PATH="$wrapper_dir:$PATH" REAL_MV_FOR_TEST="$real_mv" \
+    /bin/bash "$CLAUDE_PROFILE" save -m publication-failure
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"history skipped"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$before_head" ]
+  cmp -s "$before_index" "$dir/.git/index"
+  git -C "$dir" diff --cached --quiet --
+}
+
+@test "failed ref publication restores the original real index" {
+  run_cli_ok fork default
+  local dir before_index before_head wrapper_dir real_git
+  dir="$(profile_dir default)"
+  before_index="$BATS_TEST_TMPDIR/index-before-ref-publication"
+  cp "$dir/.git/index" "$before_index"
+  before_head="$(git -C "$dir" rev-parse HEAD)"
+  wrapper_dir="$BATS_TEST_TMPDIR/fail-ref-publication"
+  real_git="$(command -v git)"
+  mkdir -p "$wrapper_dir"
+  cat > "$wrapper_dir/git" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == update-ref ]]; then
+    echo "simulated ref publication failure" >&2
+    exit 96
+  fi
+done
+exec "$REAL_GIT_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/git"
+
+  echo '{"ref_publication": "must-roll-back-index"}' > \
+    "$CLAUDE_CODE_HOME/settings.json"
+  run env PATH="$wrapper_dir:$PATH" REAL_GIT_FOR_TEST="$real_git" \
+    /bin/bash "$CLAUDE_PROFILE" save -m ref-publication-failure
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"original index restored"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$before_head" ]
+  cmp -s "$before_index" "$dir/.git/index"
+  git -C "$dir" diff --cached --quiet --
+}
+
+@test "failed symlink replacement never writes through the external target" {
+  local external wrapper_dir real_rm real_mv
+  external="$BATS_TEST_TMPDIR/external-symlink-target"
+  wrapper_dir="$BATS_TEST_TMPDIR/fail-symlink-replacement"
+  mkdir -p "$external/-repo/memory" "$wrapper_dir"
+  echo external-memory > "$external/-repo/memory/MEMORY.md"
+  ln -s "$external" "$CLAUDE_CODE_HOME/projects"
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+
+  real_rm="$(command -v rm)"
+  real_mv="$(command -v mv)"
+cat > "$wrapper_dir/rm" <<'EOF'
+#!/usr/bin/env bash
+recursive=false
+for arg in "$@"; do
+  if [[ "$arg" == -*r* ]]; then
+    recursive=true
+  fi
+  if [[ "$arg" == "$CLAUDE_PROFILE_HOME/beta/projects" ]]; then
+    if [[ "$recursive" != true ]]; then
+      echo "simulated symlink unlink failure" >&2
+      exit 95
+    fi
+  fi
+done
+exec "$REAL_RM_FOR_TEST" "$@"
+EOF
+  cat > "$wrapper_dir/mv" <<'EOF'
+#!/usr/bin/env bash
+source_path="${@: -2:1}"
+if [[ "$source_path" == "$CLAUDE_PROFILE_HOME/beta/projects" ]]; then
+  echo "simulated symlink quarantine failure" >&2
+  exit 95
+fi
+exec "$REAL_MV_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/rm" "$wrapper_dir/mv"
+
+  run env PATH="$wrapper_dir:$PATH" REAL_RM_FOR_TEST="$real_rm" \
+    REAL_MV_FOR_TEST="$real_mv" /bin/bash "$CLAUDE_PROFILE" use alpha
+
+  [ "$status" -ne 0 ]
+  [ -L "$(profile_dir beta)/projects" ]
+  [ "$(cat "$external/-repo/memory/MEMORY.md")" = external-memory ]
+  [ -z "$(find "$external" -name '*.repair.*' -print -quit)" ]
+}
+
+@test "interrupted symlink replacement restores the quarantined profile link" {
+  local external wrapper_dir real_mv
+  external="$BATS_TEST_TMPDIR/interrupted-symlink-target"
+  wrapper_dir="$BATS_TEST_TMPDIR/interrupt-symlink-replacement"
+  mkdir -p "$external/-repo/memory" "$wrapper_dir"
+  echo external-memory > "$external/-repo/memory/MEMORY.md"
+  ln -s "$external" "$CLAUDE_CODE_HOME/projects"
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+
+  real_mv="$(command -v mv)"
+  cat > "$wrapper_dir/mv" <<'EOF'
+#!/usr/bin/env bash
+source_path="${@: -2:1}"
+target_path="${@: -1}"
+if [[ "$source_path" == */replacement &&
+      "$target_path" == "$CLAUDE_PROFILE_HOME/beta/projects" ]]; then
+  kill -TERM "$PPID"
+  exit 143
+fi
+exec "$REAL_MV_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/mv"
+
+  run env PATH="$wrapper_dir:$PATH" REAL_MV_FOR_TEST="$real_mv" \
+    /bin/bash "$CLAUDE_PROFILE" use alpha
+
+  [ "$status" -ne 0 ]
+  [ -L "$(profile_dir beta)/projects" ]
+  [ "$(readlink "$(profile_dir beta)/projects")" = "$external" ]
+  [ "$(cat "$external/-repo/memory/MEMORY.md")" = external-memory ]
+  [ -z "$(find "$CLAUDE_PROFILE_HOME" -maxdepth 1 \
+    -name '.symlink-repair.*' -print -quit)" ]
+}
+
+@test "save rejects a profile git directory redirected to another repository" {
+  run_cli_ok fork default
+  local dir external original_git before
+  dir="$(profile_dir default)"
+  external="$BATS_TEST_TMPDIR/external-repository"
+  original_git="$BATS_TEST_TMPDIR/original-profile-git"
+  mkdir -p "$external"
+  git -C "$external" init -q
+  echo canary > "$external/canary.txt"
+  git -C "$external" add canary.txt
+  git -C "$external" commit -q -m canary
+  before="$(git -C "$external" rev-parse HEAD)"
+  mv "$dir/.git" "$original_git"
+  ln -s "$external/.git" "$dir/.git"
+  echo '{"must_not_commit_externally": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli save -m redirected
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unsafe Git metadata"* ]]
+  [ "$(git -C "$external" rev-parse HEAD)" = "$before" ]
+  [ "$(cat "$external/canary.txt")" = canary ]
+  [ -z "$(git -C "$external" status --porcelain=v1)" ]
+}
+
+@test "save rejects a profile git common directory redirected to another repository" {
+  run_cli_ok fork default
+  local dir external before
+  dir="$(profile_dir default)"
+  external="$BATS_TEST_TMPDIR/external-common-repository"
+  mkdir -p "$external"
+  git -C "$external" init -q
+  echo canary > "$external/canary.txt"
+  git -C "$external" add canary.txt
+  git -C "$external" commit -q -m canary
+  before="$(git -C "$external" rev-parse HEAD)"
+  printf '%s\n' "$external/.git" > "$dir/.git/commondir"
+  echo '{"must_not_commit_to_common_dir": true}' > \
+    "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli save -m redirected-common-dir
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unsafe Git metadata"* ]]
+  [ "$(git -C "$external" rev-parse HEAD)" = "$before" ]
+  [ "$(cat "$external/canary.txt")" = canary ]
+  [ -z "$(git -C "$external" status --porcelain=v1)" ]
+}
+
+@test "read-only history rejects redirected profile git metadata" {
+  run_cli_ok fork default
+  local dir external original_git
+  dir="$(profile_dir default)"
+  external="$BATS_TEST_TMPDIR/external-history-repository"
+  original_git="$BATS_TEST_TMPDIR/original-history-git"
+  mkdir -p "$external"
+  git -C "$external" init -q
+  echo canary > "$external/canary.txt"
+  git -C "$external" add canary.txt
+  git -C "$external" commit -q -m canary
+  mv "$dir/.git" "$original_git"
+  ln -s "$external/.git" "$dir/.git"
+
+  run_cli history default
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unsafe Git metadata"* ]]
 }
 
 @test "nested gitignore files cannot hide durable memory from history or diff" {
@@ -123,6 +515,29 @@ EOF
   [ ! -e "$CLAUDE_CODE_HOME/agent-memory/researcher/new-topic.md" ]
 }
 
+@test "custom ignore rules allow deleting a previously tracked ordinary path" {
+  mkdir "$CLAUDE_CODE_HOME/local-cache"
+  echo secret-v1 > "$CLAUDE_CODE_HOME/local-cache/secret.txt"
+  run_cli_ok fork default
+  local dir
+  dir="$(profile_dir default)"
+  git -C "$dir" ls-files --error-unmatch -- \
+    local-cache/secret.txt >/dev/null
+
+  printf '\n/local-cache\n' >> "$dir/.gitignore"
+  rm "$CLAUDE_CODE_HOME/local-cache/secret.txt"
+  rmdir "$CLAUDE_CODE_HOME/local-cache"
+  run_cli_ok save -m "Ignore local secret"
+
+  [[ "$output" != *"history skipped"* ]]
+  [ ! -e "$CLAUDE_CODE_HOME/local-cache" ]
+  [ ! -e "$dir/local-cache" ]
+  ! git -C "$dir" ls-files --error-unmatch -- \
+    local-cache/secret.txt >/dev/null 2>&1
+  grep -Fxq /local-cache "$dir/.gitignore"
+  [ -z "$(git -C "$dir" status --porcelain=v1)" ]
+}
+
 @test "legacy migration waits for save before committing a memory baseline" {
   mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory"
   mkdir -p "$CLAUDE_CODE_HOME/agent-memory/researcher"
@@ -143,6 +558,7 @@ EOF
 
   run_cli_ok version
   [ "$(cat "$CLAUDE_PROFILE_HOME/.format")" = 3 ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.lock" ]
   [ "$(git -C "$dir" rev-parse HEAD)" = "$legacy" ]
   ! git -C "$dir" show HEAD:.gitignore | \
     grep -Fqx '# claude-profile-history: persistent-memory-v1'
@@ -193,6 +609,28 @@ EOF
   grep -Fxq /custom-before "$dir/.gitignore"
   grep -Fxq /custom-after-malformed-begin "$dir/.gitignore"
   [ "$(grep -Fc '# claude-profile-history: persistent-memory-v1' "$dir/.gitignore")" -eq 1 ]
+}
+
+@test "refresh replaces managed blocks written by older policy versions" {
+  run_cli_ok fork default
+  local dir
+  dir="$(profile_dir default)"
+  cat > "$dir/.gitignore" <<'EOF'
+/custom-before
+# BEGIN claude-profile managed: history-policy=1
+/obsolete-managed-rule
+# END claude-profile managed
+/custom-after
+EOF
+
+  echo changed > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m refresh-policy-version
+
+  grep -Fxq /custom-before "$dir/.gitignore"
+  grep -Fxq /custom-after "$dir/.gitignore"
+  ! grep -Fxq /obsolete-managed-rule "$dir/.gitignore"
+  [ "$(grep -Ec '^# BEGIN claude-profile managed: history-policy=' "$dir/.gitignore")" -eq 1 ]
+  grep -Fxq '# BEGIN claude-profile managed: history-policy=2' "$dir/.gitignore"
 }
 
 @test "migration replaces a symlinked gitignore without touching its target" {

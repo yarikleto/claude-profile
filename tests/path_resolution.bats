@@ -93,3 +93,20 @@ load test_helper
   [ "$status" -ne 0 ]
   [ -f "$ext/canary.txt" ]      # external file survives — no rm -rf through the symlink
 }
+
+@test "path: use refuses a symlinked profile root before repairing its payload" {
+  run_cli_ok fork safe
+  local external="$BATS_TEST_TMPDIR/external-profile-target"
+  mkdir -p "$external"
+  echo external-canary > "$external/settings.json"
+  ln -s "$external" "$CLAUDE_PROFILE_HOME/redirected"
+  echo live-safe > "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli use redirected
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"symlinked profile path"* ]]
+  [ -L "$CLAUDE_PROFILE_HOME/redirected" ]
+  [ "$(cat "$external/settings.json")" = external-canary ]
+  [ "$(cat "$CLAUDE_CODE_HOME/settings.json")" = live-safe ]
+}

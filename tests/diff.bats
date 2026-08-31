@@ -1,6 +1,25 @@
 #!/usr/bin/env bats
 load test_helper
 
+install_read_tree_failure_git() {
+  export REAL_GIT_FOR_TEST
+  REAL_GIT_FOR_TEST="$(command -v git)"
+  local wrapper_dir="$BATS_TEST_TMPDIR/failing-git"
+  mkdir -p "$wrapper_dir"
+  cat > "$wrapper_dir/git" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "read-tree" ]]; then
+    echo "simulated read-tree failure" >&2
+    exit 91
+  fi
+done
+exec "$REAL_GIT_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/git"
+  export PATH="$wrapper_dir:$PATH"
+}
+
 @test "no changes when profile matches live" {
   run_cli_ok fork default
   run_cli_ok use default
@@ -112,6 +131,84 @@ load test_helper
   [[ "$output" == *"projects/-repo/memory/MEMORY.md"* ]]
   [[ "$output" == *"agent-memory/researcher/MEMORY.md"* ]]
   [[ "$output" != *"session.jsonl"* ]]
+}
+
+@test "inactive diff failure is reported instead of rendered as no changes" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  install_read_tree_failure_git
+
+  run_cli diff alpha
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Could not inspect unsaved changes"* ]]
+  [[ "$output" != *"no changes"* ]]
+  [ -z "$(find "$CLAUDE_PROFILE_HOME" -maxdepth 1 -name '.diff-work.*' -print -quit)" ]
+}
+
+@test "active diff failure is reported instead of rendered as no changes" {
+  run_cli_ok fork alpha
+  install_read_tree_failure_git
+
+  run_cli diff
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Could not inspect unsaved changes"* ]]
+  [[ "$output" != *"no changes"* ]]
+  [ -z "$(find "$CLAUDE_PROFILE_HOME" -maxdepth 1 -name '.diff-work.*' -print -quit)" ]
+}
+
+@test "inactive diff uses scratch objects and leaves the profile repository unchanged" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  local dir before_objects after_objects
+  dir="$(profile_dir alpha)"
+  before_objects="$(find "$dir/.git/objects" -type f -print | LC_ALL=C sort)"
+
+  echo '{"unique_unsaved_value": "objects-must-stay-scratch"}' > "$dir/settings.json"
+  run_cli diff alpha
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'M\tsettings.json'* ]]
+  after_objects="$(find "$dir/.git/objects" -type f -print | LC_ALL=C sort)"
+  [ "$after_objects" = "$before_objects" ]
+  [ -z "$(find "$CLAUDE_PROFILE_HOME" -maxdepth 1 -name '.diff-work.*' -print -quit)" ]
+}
+
+@test "inactive diff supports a profile store path containing alternate separators" {
+  export CLAUDE_PROFILE_HOME="$BATS_TEST_TMPDIR/store:colon"$'\n'"newline"
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  local dir
+  dir="$(profile_dir alpha)"
+
+  echo '{"changed_in_colon_store": true}' > "$dir/settings.json"
+  run_cli diff alpha
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'M\tsettings.json'* ]]
+  [ -z "$(find "$CLAUDE_PROFILE_HOME" -maxdepth 1 -name '.diff-work.*' -print -quit)" ]
+}
+
+@test "inactive diff does not require symlink support for ordinary store paths" {
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  local dir wrapper_dir
+  dir="$(profile_dir alpha)"
+  wrapper_dir="$BATS_TEST_TMPDIR/no-symlinks"
+  mkdir -p "$wrapper_dir"
+  cat > "$wrapper_dir/ln" <<'EOF'
+#!/usr/bin/env bash
+echo "symlinks unsupported" >&2
+exit 97
+EOF
+  chmod +x "$wrapper_dir/ln"
+  echo '{"changed_without_symlinks": true}' > "$dir/settings.json"
+
+  run env PATH="$wrapper_dir:$PATH" /bin/bash "$CLAUDE_PROFILE" diff alpha
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'M\tsettings.json'* ]]
 }
 
 @test "diff: two-arg form fails on nonexistent profile name" {

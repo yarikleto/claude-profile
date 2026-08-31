@@ -101,9 +101,16 @@ SEED_CONTENTS=(
 # explicitly versioning Claude Code's durable auto-memory and subagent memory.
 # The marker lets restore distinguish commits made before memory was covered:
 # absence in those legacy commits means "unknown", not "memory was empty".
-GITIGNORE_MANAGED_BEGIN="# BEGIN claude-profile managed: history-policy=2"
+GITIGNORE_MANAGED_BEGIN_PREFIX="# BEGIN claude-profile managed: history-policy="
+GITIGNORE_MANAGED_VERSION="2"
+GITIGNORE_MANAGED_BEGIN="${GITIGNORE_MANAGED_BEGIN_PREFIX}${GITIGNORE_MANAGED_VERSION}"
 GITIGNORE_MANAGED_END="# END claude-profile managed"
 GITIGNORE_MEMORY_MARKER="# claude-profile-history: persistent-memory-v1"
+# Keep path-heavy Git operations fast without approaching ARG_MAX. The byte
+# ceiling protects unusually long filenames; the count ceiling avoids hundreds
+# of tiny Git subprocesses for ordinary config-heavy profiles.
+GIT_PATH_BATCH_MAX=512
+GIT_PATH_BATCH_MAX_BYTES=131072
 GITIGNORE_CONTENT="$GITIGNORE_MANAGED_BEGIN
 $GITIGNORE_MEMORY_MARKER
 !/projects/

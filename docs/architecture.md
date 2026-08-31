@@ -112,6 +112,11 @@ between "managed items" and "bulk items" for copying or moving. A managed
 enforces the same boundary explicitly so nested ignore files cannot hide memory
 or re-include transcripts.
 
+Lines outside the managed block remain in the file for ordinary paths, but
+they cannot override this boundary. Durable memory and disposable session data
+therefore have the same history behavior regardless of custom, nested, or
+global ignore rules.
+
 Git-tracked (configuration and durable memory):
 - Everything not in `.gitignore`.
 - Explicitly, both `agent-memory/**` and `projects/*/memory/**`.
@@ -125,12 +130,22 @@ repositories without staging or committing. Startup must not commit during this
 migration: the active profile can be moved-thin, with its tracked payload living
 in `~/.claude/`, so `git add -A` would record false deletions. The next normal
 save repopulates the profile before committing its first memory baseline.
+Mutating commands migrate while holding the normal exclusive lock. Read-only
+commands make one non-blocking migration attempt and skip it during contention,
+then release any optional lock before running a log, pager, or diff.
 
 The generated policy carries a history marker. Restore points with that marker
 have exact memory semantics, including deletions. For an older restore point,
 memory absence is unknowable because those paths were ignored, so restore
 preserves current memory and warns. The root `.gitignore` itself is never rolled
-back.
+back. Restore also filters disposable roots from historical trees, even if an
+older bug or manual force-add tracked them, so current transcripts and caches
+remain untouched. A target-only path that collides with current untracked,
+custom-ignored content causes restore to stop before changing the worktree.
+Embedded Git repositories in allowed paths also stop restore because an outer
+gitlink does not contain their worktree data. After applying a target, restore
+verifies its final history commit; if that commit cannot be recorded, it rolls
+the profile back to the complete safety tree instead of reporting success.
 
 ## Command flows
 
@@ -258,8 +273,20 @@ Profile state management:
 Git operations for version history:
 
 - `_git_init` — init repo, write managed `.gitignore`, enforce policy, initial commit
-- `_git_commit` — enforce policy + commit (no-op if nothing changed)
+- `_git_commit` — enforce policy + transactionally commit (no-op if unchanged)
 - `_git_resolve_ref` — resolve commit hash or date string to a commit
+
+Commit staging uses a private index. The commit object is prepared first, the
+complete index is atomically published, and only then is `HEAD` advanced with a
+compare-and-swap ref update. Staging failures leave the real index untouched;
+an interruption cannot leave a new `HEAD` paired with a stale index. Inactive
+`diff` additionally uses a private object directory, so read-only inspection
+does not leave unreachable blobs in the profile repository.
+
+Before any profile Git operation, `.git` must be a real in-profile directory
+with no symlinked metadata or external worktree redirect. This prevents a
+corrupt or planted Git directory from redirecting saves into another
+repository.
 
 ### `commands/profile.sh`
 

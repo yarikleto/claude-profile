@@ -6,9 +6,10 @@ cmd_history() {
   _require_profile_exists "$name"
 
   local profile_dir="$PROFILES_DIR/$name"
-  if [[ ! -d "$profile_dir/.git" ]]; then
+  if [[ ! -e "$profile_dir/.git" && ! -L "$profile_dir/.git" ]]; then
     warn "No history for profile $(_pname "$name")"; return
   fi
+  _git_require_safe_profile_repo "$profile_dir" || return 1
 
   echo -e "${CYAN}${BOLD}History: $name${NC}"
   echo ""
@@ -39,9 +40,10 @@ cmd_diff() {
   _require_profile_name "$name" "claude-profile diff [name] [commit|date]"
 
   local profile_dir="$PROFILES_DIR/$name"
-  if [[ ! -d "$profile_dir/.git" ]]; then
+  if [[ ! -e "$profile_dir/.git" && ! -L "$profile_dir/.git" ]]; then
     warn "No history for profile $(_pname "$name")"; return
   fi
+  _git_require_safe_profile_repo "$profile_dir" || return 1
 
   if [[ -z "$ref" ]]; then
     _diff_unsaved "$name" "$profile_dir"
@@ -107,36 +109,62 @@ _prepare_diff_baseline_repo() {
   git -C "$repo" commit -q -m "Diff baseline" --allow-empty || return 1
 }
 
-_diff_git_status() {
+_diff_git_status() (
   local repo="$1"
-  local index changes
-  if ! index="$(mktemp "$PROFILES_DIR/.diff-index.XXXXXX")"; then
+  local scratch index objects git_dir real_objects changes
+
+  if ! git_dir="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)"; then
     return 1
   fi
-  # read-tree expects either a valid index or no file at all.
-  rm -f "$index"
-  # Git interprets a relative GIT_INDEX_FILE after applying -C, so resolve the
-  # now-nonexistent temp path against the caller's cwd first.
-  index="$(_canonical_path "$index")"
-  if ! GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD 2>/dev/null; then
-    rm -f "$index"
+  real_objects="$git_dir/objects"
+  if ! scratch="$(mktemp -d "$PROFILES_DIR/.diff-work.XXXXXX")"; then
+    return 1
+  fi
+  trap 'rm -rf -- "$scratch"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  scratch="$(_canonical_path "$scratch")"
+  # Keep both the alternate index and any blobs hashed by `git add` outside
+  # the profile repository. The real object directory is read-only alternate
+  # storage, so an inactive `diff` does not mutate an otherwise read-only repo.
+  index="$scratch/index"
+  objects="$scratch/objects"
+  if ! mkdir -p "$objects/info"; then
+    return 1
+  fi
+  # GIT_ALTERNATE_OBJECT_DIRECTORIES is colon-delimited, so an alternates file
+  # is both safer and compatible with ':' in the store path. Its normal format
+  # accepts the absolute path directly and works on filesystems without
+  # symlinks. Only a literal newline needs indirection because the file is
+  # line-delimited; a fixed relative entry points at a scratch symlink then.
+  if [[ "$real_objects" == *$'\n'* ]]; then
+    if ! ln -s "$real_objects" "$objects/alternate" ||
+       ! printf 'alternate\n' > "$objects/info/alternates"; then
+      return 1
+    fi
+  elif ! printf '%s\n' "$real_objects" > "$objects/info/alternates"; then
+    return 1
+  fi
+
+  export GIT_INDEX_FILE="$index"
+  export GIT_OBJECT_DIRECTORY="$objects"
+  unset GIT_ALTERNATE_OBJECT_DIRECTORIES
+
+  if ! git -C "$repo" read-tree HEAD 2>/dev/null; then
     return 1
   fi
   if ! _git_stage_history_paths "$repo" "$index"; then
-    rm -f "$index"
     return 1
   fi
-  if ! changes="$(GIT_INDEX_FILE="$index" git -C "$repo" diff \
+  if ! changes="$(git -C "$repo" diff \
       --cached --name-status --no-renames HEAD -- . \
       ':(exclude).gitignore' 2>/dev/null)"; then
-    rm -f "$index"
     return 1
   fi
-  rm -f "$index"
   if [[ -n "$changes" ]]; then
     printf '%s\n' "$changes" | sed 's/^/  /'
   fi
-}
+)
 
 _print_diff_changes() {
   local changes="$1"
@@ -173,18 +201,27 @@ _diff_active_unsaved() {
 
 _diff_profile_unsaved() {
   local profile_dir="$1"
-  _print_diff_changes "$(_diff_git_status "$profile_dir")"
+  local changes rc=0
+  changes="$(_diff_git_status "$profile_dir")" || rc=$?
+  [[ "$rc" -eq 0 ]] || return "$rc"
+
+  _print_diff_changes "$changes"
 }
 
 _diff_unsaved() {
   local name="$1" profile_dir="$2"
+  local diff_rc=0
   echo -e "${CYAN}${BOLD}Unsaved changes: $name${NC}"
   echo ""
 
   if [[ "$(get_current)" == "$name" ]]; then
-    _diff_active_unsaved "$profile_dir"
+    _diff_active_unsaved "$profile_dir" || diff_rc=$?
   else
-    _diff_profile_unsaved "$profile_dir"
+    _diff_profile_unsaved "$profile_dir" || diff_rc=$?
+  fi
+  if [[ "$diff_rc" -ne 0 ]]; then
+    err "Could not inspect unsaved changes for $(_pname "$name")"
+    return "$diff_rc"
   fi
 }
 
@@ -200,34 +237,315 @@ _diff_since_ref() {
   git -C "$profile_dir" diff "$resolved"..HEAD --
 }
 
-_restore_ref_has_checkout_paths() {
+_restore_path_is_memory() {
+  local path="$1"
+  if [[ "$path" == "agent-memory" || "$path" == agent-memory/* ]]; then
+    return 0
+  fi
+  [[ "$path" =~ ^projects/[^/]+/memory(/|$) ]]
+}
+
+_restore_path_is_disposable() {
+  local path="$1"
+  case "$path" in
+    projects|projects/*)
+      if _restore_path_is_memory "$path"; then
+        return 1
+      fi
+      return 0
+      ;;
+    todos|todos/*|plans|plans/*|tasks|tasks/*|plugins|plugins/*|history.jsonl|history.jsonl/*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# Build a tree containing only the target state a restore is allowed to touch:
+# ordinary configuration plus durable memory. Disposable roots are omitted even
+# if an old/manual commit accidentally tracked them, so applying this tree leaves
+# their current untracked worktree copies alone. The current tool-owned policy is
+# staged from the worktree rather than taken from the target revision.
+_restore_build_target_tree() (
   local profile_dir="$1" ref="$2" preserve_memory="$3"
-  local tmp path found=false
-  if ! tmp="$(mktemp "$PROFILES_DIR/.restore-paths.XXXXXX")"; then
-    return 2
+  local scratch index entries filtered current_entries record path tree
+
+  if ! scratch="$(mktemp -d "$PROFILES_DIR/.restore-tree.XXXXXX")"; then
+    return 1
   fi
-  if ! git -C "$profile_dir" ls-tree -rz --name-only "$ref" > "$tmp"; then
-    rm -f "$tmp"
-    return 2
+  trap 'rm -rf -- "$scratch"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  scratch="$(_canonical_path "$scratch")"
+  index="$scratch/index"
+  entries="$scratch/target-entries"
+  filtered="$scratch/filtered-entries"
+  current_entries="$scratch/current-entries"
+
+  if ! git -C "$profile_dir" ls-tree -rz --full-tree "$ref" > "$entries" 2>/dev/null ||
+     ! GIT_INDEX_FILE="$index" git -C "$profile_dir" read-tree --empty 2>/dev/null; then
+    return 1
   fi
-  while IFS= read -r -d '' path; do
-    # The current tool-owned policy is retained across every restore.
-    if [[ "$path" == ".gitignore" ]]; then
+  : > "$filtered" || return 1
+  while IFS= read -r -d '' record; do
+    path="${record#*$'\t'}"
+    if [[ "$path" == ".gitignore" || "$path" == .gitignore/* ]]; then
       continue
     fi
-    if [[ "$preserve_memory" == true ]]; then
-      if [[ "$path" == "agent-memory" || "$path" == agent-memory/* ]]; then
-        continue
-      fi
-      if [[ "$path" =~ ^projects/[^/]+/memory(/|$) ]]; then
-        continue
-      fi
+    if _restore_path_is_disposable "$path"; then
+      continue
     fi
-    found=true
-    break
-  done < "$tmp"
-  rm -f "$tmp"
-  [[ "$found" == true ]]
+    if [[ "$preserve_memory" == true ]] && _restore_path_is_memory "$path"; then
+      continue
+    fi
+    printf '%s\0' "$record" >> "$filtered" || return 1
+  done < "$entries"
+
+  if [[ "$preserve_memory" == true ]]; then
+    if ! git -C "$profile_dir" ls-tree -rz --full-tree HEAD > "$current_entries" 2>/dev/null; then
+      return 1
+    fi
+    while IFS= read -r -d '' record; do
+      path="${record#*$'\t'}"
+      if _restore_path_is_memory "$path"; then
+        printf '%s\0' "$record" >> "$filtered" || return 1
+      fi
+    done < "$current_entries"
+  fi
+
+  if ! GIT_INDEX_FILE="$index" git -C "$profile_dir" update-index \
+      -z --index-info < "$filtered" 2>/dev/null; then
+    return 1
+  fi
+  if [[ -e "$profile_dir/.gitignore" || -L "$profile_dir/.gitignore" ]]; then
+    if ! GIT_INDEX_FILE="$index" git -C "$profile_dir" add -f -A -- \
+        .gitignore 2>/dev/null; then
+      return 1
+    fi
+  fi
+  if ! tree="$(GIT_INDEX_FILE="$index" git -C "$profile_dir" write-tree 2>/dev/null)"; then
+    return 1
+  fi
+  printf '%s\n' "$tree"
+)
+
+_restore_write_allowed_paths() {
+  local profile_dir="$1" tree="$2" output="$3"
+  local all_paths="${output}.all" path
+  : > "$output" || return 1
+  if ! git -C "$profile_dir" ls-tree -rz --name-only "$tree" > "$all_paths" 2>/dev/null; then
+    rm -f "$all_paths"
+    return 1
+  fi
+  while IFS= read -r -d '' path; do
+    if [[ "$path" == ".gitignore" || "$path" == .gitignore/* ]] ||
+       _restore_path_is_disposable "$path"; then
+      continue
+    fi
+    printf '%s\0' "$path" >> "$output" || {
+      rm -f "$all_paths"
+      return 1
+    }
+  done < "$all_paths"
+  rm -f "$all_paths"
+}
+
+# Run path commands in bounded batches so profiles with large memory trees do
+# not exceed ARG_MAX. Every dynamic name uses literal pathspec magic, including
+# names containing newlines, brackets, wildcards, or a leading colon/dash.
+_restore_run_path_batches() {
+  local profile_dir="$1" action="$2" paths_file="$3"
+  local path pathspec path_bytes batch_bytes=0
+  local -a paths=()
+  while IFS= read -r -d '' path; do
+    pathspec=":(top,literal)$path"
+    path_bytes=$((${#pathspec} + 1))
+    if [[ "${#paths[@]}" -gt 0 &&
+          ( "${#paths[@]}" -ge "$GIT_PATH_BATCH_MAX" ||
+            $((batch_bytes + path_bytes)) -gt "$GIT_PATH_BATCH_MAX_BYTES" ) ]]; then
+      _restore_run_path_batch "$profile_dir" "$action" "${paths[@]}" || return 1
+      paths=()
+      batch_bytes=0
+    fi
+    paths+=("$pathspec")
+    batch_bytes=$((batch_bytes + path_bytes))
+  done < "$paths_file"
+  if [[ "${#paths[@]}" -gt 0 ]]; then
+    _restore_run_path_batch "$profile_dir" "$action" "${paths[@]}" || return 1
+  fi
+}
+
+_restore_run_path_batch() {
+  local profile_dir="$1" action="$2"
+  shift 2
+  case "$action" in
+    remove)
+      git -C "$profile_dir" rm -f --quiet --ignore-unmatch -- "$@"
+      ;;
+    clean)
+      # These are exact, filtered target paths created by a failed checkout.
+      # Include ignored entries so a target path that matches a custom rule
+      # cannot survive rollback invisibly.
+      git -C "$profile_dir" clean -f -d -x --quiet -- "$@"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# A filesystem leaf is protected only when the current allowed history tracks
+# that exact leaf. Calling ls-files for a directory path is insufficient: Git
+# also reports success when only descendants match, which can hide ignored
+# files that a target file would otherwise replace.
+_restore_worktree_leaf_is_protected() {
+  local profile_dir="$1" path="$2"
+  if [[ "$path" == ".gitignore" || "$path" == .gitignore/* ]] ||
+     _restore_path_is_disposable "$path"; then
+    return 1
+  fi
+  git -C "$profile_dir" ls-files --error-unmatch -- \
+    ":(top,literal)$path" >/dev/null 2>&1
+}
+
+# Apply only tracked configuration and durable-memory paths. Removing the
+# current tracked paths explicitly, then updating the index without `-u`, keeps
+# ignored/untracked session roots out of Git's destructive unpack_trees path.
+_restore_apply_target_tree() (
+  local profile_dir="$1" rollback_tree="$2" target_tree="$3"
+  local scratch current_paths target_paths path existing_paths existing rel probe
+  local gitlink_entries record metadata mode tree
+  if ! scratch="$(mktemp -d "$PROFILES_DIR/.restore-apply.XXXXXX")"; then
+    return 2
+  fi
+  trap 'rm -rf -- "$scratch"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  scratch="$(_canonical_path "$scratch")"
+  current_paths="$scratch/current-paths"
+  target_paths="$scratch/target-paths"
+  existing_paths="$scratch/existing-paths"
+  gitlink_entries="$scratch/gitlink-entries"
+
+  _restore_write_allowed_paths "$profile_dir" "$rollback_tree" "$current_paths" || return 2
+  _restore_write_allowed_paths "$profile_dir" "$target_tree" "$target_paths" || return 2
+  # An outer Git tree stores an embedded repository only as a gitlink commit
+  # ID; none of that repository's tracked or untracked worktree content is in
+  # the safety commit. `git rm` recursively removes the directory, so refuse
+  # any allowed current/target gitlink before touching the worktree. Gitlinks
+  # under disposable roots are excluded from restore and remain untouched.
+  for tree in "$rollback_tree" "$target_tree"; do
+    if ! git -C "$profile_dir" ls-tree -rz --full-tree "$tree" \
+        > "$gitlink_entries" 2>/dev/null; then
+      echo "could not inspect embedded Git repositories before restore" >&2
+      return 2
+    fi
+    while IFS= read -r -d '' record; do
+      metadata="${record%%$'\t'*}"
+      mode="${metadata%% *}"
+      path="${record#*$'\t'}"
+      if [[ "$mode" != 160000 || "$path" == ".gitignore" ||
+            "$path" == .gitignore/* ]] || _restore_path_is_disposable "$path"; then
+        continue
+      fi
+      echo "embedded Git repository cannot be restored safely: $path" >&2
+      return 2
+    done < "$gitlink_entries"
+  done
+  # A target path can collide with a current file deliberately excluded by a
+  # custom ignore rule. It can also replace a directory that contains ignored
+  # content, or sit below an untracked file/symlink ancestor. The safety commit
+  # cannot protect any of those leaves, so inspect the actual worktree shape
+  # before the destructive phase. Directories containing only allowed tracked
+  # leaves remain safe for ordinary directory/file history transitions.
+  while IFS= read -r -d '' path; do
+    if [[ -L "$profile_dir/$path" ||
+          ( -e "$profile_dir/$path" && ! -d "$profile_dir/$path" ) ]]; then
+      if _restore_worktree_leaf_is_protected "$profile_dir" "$path"; then
+        continue
+      fi
+      echo "untracked path would be overwritten: $path" >&2
+      return 2
+    fi
+    if [[ -d "$profile_dir/$path" ]]; then
+      if ! find "$profile_dir/$path" ! -type d -print0 \
+          > "$existing_paths" 2>/dev/null; then
+        echo "could not inspect existing path before restore: $path" >&2
+        return 2
+      fi
+      while IFS= read -r -d '' existing; do
+        rel="${existing#"$profile_dir"/}"
+        if ! _restore_worktree_leaf_is_protected "$profile_dir" "$rel"; then
+          echo "untracked path would be overwritten: $rel" >&2
+          return 2
+        fi
+      done < "$existing_paths"
+      continue
+    fi
+
+    probe="$path"
+    while [[ "$probe" == */* ]]; do
+      probe="${probe%/*}"
+      if [[ -L "$profile_dir/$probe" ||
+            ( -e "$profile_dir/$probe" && ! -d "$profile_dir/$probe" ) ]]; then
+        if ! _restore_worktree_leaf_is_protected "$profile_dir" "$probe"; then
+          echo "untracked path would be overwritten: $probe" >&2
+          return 2
+        fi
+        break
+      fi
+    done
+  done < "$target_paths"
+  _restore_run_path_batches "$profile_dir" remove "$current_paths" || return 1
+  git -C "$profile_dir" read-tree "$target_tree" || return 1
+  git -C "$profile_dir" checkout-index -a -f || return 1
+)
+
+_restore_profile_after_failure() {
+  local profile_dir="$1" rollback_tree="$2" target_tree="$3"
+  local scratch target_paths rollback_error="" rollback_changes="" rollback_rc=0
+  if ! scratch="$(mktemp -d "$PROFILES_DIR/.restore-rollback.XXXXXX")"; then
+    err "Failed to allocate rollback workspace"
+    return 1
+  fi
+  target_paths="$scratch/target-paths"
+
+  if ! _restore_write_allowed_paths "$profile_dir" "$target_tree" "$target_paths"; then
+    rm -rf "$scratch"
+    err "Failed to inspect target paths during rollback"
+    return 1
+  fi
+  # Reset the index first. Target-only files left by a partial checkout are now
+  # untracked; clean only the filtered target path list, then materialize HEAD.
+  if ! rollback_error="$(git -C "$profile_dir" read-tree "$rollback_tree" 2>&1)" ||
+     ! _restore_run_path_batches "$profile_dir" clean "$target_paths" \
+        >>"$scratch/rollback-output" 2>&1 ||
+     ! git -C "$profile_dir" checkout-index -a -f \
+        >>"$scratch/rollback-output" 2>&1; then
+    if [[ -z "$rollback_error" && -f "$scratch/rollback-output" ]]; then
+      rollback_error="$(cat "$scratch/rollback-output")"
+    fi
+    rm -rf "$scratch"
+    if [[ -n "$rollback_error" ]]; then
+      err "Failed to restore the last saved state: $rollback_error"
+    else
+      err "Failed to restore the last saved state"
+    fi
+    return 1
+  fi
+  rm -rf "$scratch"
+
+  if ! git -C "$profile_dir" diff --cached --quiet "$rollback_tree" -- 2>/dev/null ||
+     ! git -C "$profile_dir" diff --quiet 2>/dev/null; then
+    err "Failed to verify the restored index and working tree"
+    return 1
+  fi
+  rollback_changes="$(_diff_git_status "$profile_dir")" || rollback_rc=$?
+  if [[ "$rollback_rc" -ne 0 || -n "$rollback_changes" ]]; then
+    err "Failed to verify the restored history policy"
+    return 1
+  fi
+  return 0
 }
 
 cmd_restore() {
@@ -261,13 +579,14 @@ cmd_restore() {
   fi
 
   local profile_dir="$PROFILES_DIR/$name"
-  # Restore runs Git mutations (git rm -rf ., checkout) directly on this dir —
-  # gate it on the same path-safety check as the file primitives so a symlinked
-  # profile root can't point them at files outside the store.
+  # Restore applies Git index/worktree mutations directly to this directory.
+  # Gate it on the same path and metadata checks as the file primitives so a
+  # symlink or redirected repository cannot target files outside the store.
   _assert_profile_path_safe "$profile_dir"
-  if [[ ! -d "$profile_dir/.git" ]]; then
+  if [[ ! -e "$profile_dir/.git" && ! -L "$profile_dir/.git" ]]; then
     err "No history for profile $(_pname "$name")"; exit 1
   fi
+  _git_require_safe_profile_repo "$profile_dir" || exit 1
 
   local resolved
   resolved="$(_git_resolve_ref "$profile_dir" "$ref")"
@@ -297,42 +616,61 @@ cmd_restore() {
   if ! _git_ref_has_memory_history "$profile_dir" "$resolved"; then
     preserve_memory=true
     warn "Target predates memory history — preserving current projects/*/memory and agent-memory"
-  fi
-  local checkout_target=false checkout_paths_rc=0
-  if _restore_ref_has_checkout_paths "$profile_dir" "$resolved" "$preserve_memory"; then
-    checkout_target=true
   else
-    checkout_paths_rc=$?
-    if [[ "$checkout_paths_rc" -eq 2 ]]; then
-      err "Could not inspect $ref — rollback not started; current state was saved"
-      exit 1
-    fi
+    info "Durable memory will be restored to the selected revision; session data is preserved"
+  fi
+  # Construct the exact tree restore is allowed to apply before touching the
+  # worktree. This deliberately filters disposable roots even when an older or
+  # manually polluted commit tracked them. For a legacy target it also merges
+  # the safety commit's current memory into the target tree.
+  local rollback_tree="" target_tree="" restore_error="" restore_rc=0
+  if ! rollback_tree="$(git -C "$profile_dir" rev-parse 'HEAD^{tree}' 2>/dev/null)" ||
+     ! target_tree="$(_restore_build_target_tree \
+        "$profile_dir" "$resolved" "$preserve_memory")"; then
+    err "Could not prepare $ref — rollback not started; current state was saved"
+    exit 1
   fi
 
-  # Full rollback: remove tracked files that don't exist in the target commit,
-  # then restore the target's files. The tool-owned .gitignore is never rolled
-  # back. For a legacy target, memory absence is unknowable (it was ignored),
-  # so retain the safety-net commit's current memory and say so explicitly.
-  local -a restore_paths=(. ':(exclude).gitignore')
-  if [[ "$preserve_memory" == true ]]; then
-    restore_paths+=(
-      ':(exclude)agent-memory'
-      ':(exclude,glob)agent-memory/**'
-      ':(exclude,glob)projects/*/memory'
-      ':(exclude,glob)projects/*/memory/**'
-    )
-  fi
-  if ! git -C "$profile_dir" rm -rf --quiet --ignore-unmatch -- "${restore_paths[@]}" 2>/dev/null; then
-    err "Failed to clean working tree for $ref — profile unchanged"
+  # Apply the filtered tree without putting ignored session roots through
+  # read-tree's worktree update, which may delete ignored directories. If Git
+  # fails partway, restore the complete safety tree and remove target-only
+  # paths before claiming recovery.
+  restore_error="$(_restore_apply_target_tree \
+    "$profile_dir" "$rollback_tree" "$target_tree" 2>&1)" || restore_rc=$?
+  if [[ "$restore_rc" -ne 0 ]]; then
+    if [[ -n "$restore_error" ]]; then
+      err "Failed to apply $ref: $restore_error"
+    else
+      err "Failed to apply $ref"
+    fi
+    if [[ "$restore_rc" -eq 2 ]]; then
+      err "Restore was not started; the saved profile and live files are unchanged"
+      exit 1
+    fi
+    if _restore_profile_after_failure \
+        "$profile_dir" "$rollback_tree" "$target_tree"; then
+      err "The profile was restored to its last saved state instead"
+    else
+      err "The profile may be partially changed; its last saved state remains recoverable at HEAD"
+    fi
     exit 1
   fi
-  if [[ "$checkout_target" == true ]] && \
-     ! git -C "$profile_dir" checkout "$resolved" -- "${restore_paths[@]}" 2>/dev/null; then
-    git -C "$profile_dir" checkout HEAD -- . 2>/dev/null || true
-    err "Failed to check out $ref — the profile was restored to its last saved state instead"
+  local commit_rc=0 committed_changes="" committed_diff_rc=0
+  _git_commit "$profile_dir" "Restored to $ref" || commit_rc=$?
+  if [[ "$commit_rc" -eq 0 ]]; then
+    committed_changes="$(_diff_git_status "$profile_dir")" || committed_diff_rc=$?
+  fi
+  if [[ "$commit_rc" -ne 0 || "$committed_diff_rc" -ne 0 ||
+        -n "$committed_changes" ]]; then
+    err "Could not record restored state — rolling back"
+    if _restore_profile_after_failure \
+        "$profile_dir" "$rollback_tree" "$target_tree"; then
+      err "The profile was restored to its last saved state instead"
+    else
+      err "The profile may be partially changed; its last saved state remains recoverable at HEAD"
+    fi
     exit 1
   fi
-  _git_commit "$profile_dir" "Restored to $ref"
 
   # If active, reload into live locations
   if [[ "$(get_current)" == "$name" ]]; then

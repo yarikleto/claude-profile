@@ -5,7 +5,7 @@
 <br>
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yarikleto/claude-profile/tests.yml?branch=main&label=CI&logo=github&logoColor=white)](https://github.com/yarikleto/claude-profile/actions/workflows/tests.yml)
-[![Test count](https://img.shields.io/badge/tests-318%20passing-brightgreen?logo=github&logoColor=white)](tests/)
+[![Test count](https://img.shields.io/badge/tests-358%20passing-brightgreen?logo=github&logoColor=white)](tests/)
 [![CLI version](https://img.shields.io/github/v/tag/yarikleto/claude-profile?label=CLI&sort=semver&filter=v*&color=18182f)](https://github.com/yarikleto/claude-profile/tags)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)](#install)
 [![Shell: Bash](https://img.shields.io/badge/shell-Bash-4EAA25?logo=gnubash&logoColor=white)](claude-profile)
@@ -164,6 +164,9 @@ history [name]          View change log with dates
 diff [name] [ref]       Show unsaved changes or changes since a commit
 restore [name] <ref>    Restore profile to a point in time
 ```
+
+Unsaved `diff` output uses Git's `A`, `M`, and `D` status letters for added,
+modified, and deleted paths.
 
 ```bash
 $ claude-profile save -m "Added code review agents"

@@ -54,27 +54,142 @@ _release_lock() {
   if [[ -n "$_LOCK_TOKEN" && "$(cat "$lock/token" 2>/dev/null || true)" == "$_LOCK_TOKEN" ]]; then
     rm -rf "$lock"
   fi
+  # Whether we released our lock or discovered that ownership had changed,
+  # this process must not claim that the old token is still authoritative.
+  _LOCK_TOKEN=""
+  return 0
 }
 
-_acquire_lock() {
-  # Startup migration may acquire the store lock before dispatch discovers
-  # that the requested command is mutating. Re-entry by the same process is a
-  # no-op; the original ownership token and EXIT trap remain authoritative.
+# Return the pid of a live process that is between creating the lock directory
+# and atomically publishing its pid into it. The pid temp exists before mkdir;
+# renaming it into the lock has no instant where neither path exists. This
+# closes the otherwise unavoidable mkdir-to-pid window without relying on a
+# hard link (which is unavailable on filesystems such as exFAT).
+_pending_lock_owner_pid() {
+  local pending pid
+  for pending in "$PROFILES_DIR"/.lock-pid.*; do
+    if [[ -L "$pending" || ! -f "$pending" ]]; then
+      continue
+    fi
+    pid="$(cat "$pending" 2>/dev/null || true)"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Clean up only metadata that still proves this process owns the partial
+# claim. Unknown entries or a replacement owner's pid/token are left intact.
+_cleanup_partial_lock_claim() {
+  local lock="$1" expected_token="$2"
+  local pid="" token="" token_missing=false
+  if [[ ! -L "$lock/pid" && -f "$lock/pid" ]]; then
+    pid="$(cat "$lock/pid" 2>/dev/null || true)"
+  fi
+  if [[ ! -e "$lock/token" && ! -L "$lock/token" ]]; then
+    token_missing=true
+  elif [[ ! -L "$lock/token" && -f "$lock/token" ]]; then
+    token="$(cat "$lock/token" 2>/dev/null || true)"
+  fi
+
+  if [[ "$pid" == "$$" && \
+        ( "$token_missing" == true || "$token" == "$expected_token" ) ]]; then
+    rm -f "$lock/pid"
+    if [[ "$token" == "$expected_token" ]]; then
+      rm -f "$lock/token"
+    fi
+    rmdir "$lock" 2>/dev/null || true
+  elif [[ ! -e "$lock/pid" && ! -L "$lock/pid" && \
+          "$token_missing" == true ]]; then
+    # Before pid publication the directory should still be empty. `rmdir`
+    # cannot remove a replacement or an attacker-added entry.
+    rmdir "$lock" 2>/dev/null || true
+  fi
+}
+
+# Claim the lock exactly once. Contention is an ordinary false result: do not
+# wait, inspect/take over a stale owner, or print anything. Startup migration
+# uses this for read-only commands so diagnostics never become unavailable just
+# because a writer is active.
+_try_acquire_lock() {
   if [[ -n "$_LOCK_TOKEN" ]]; then
     return 0
   fi
   ensure_dir
   local lock="$PROFILES_DIR/.lock"
-  _LOCK_TOKEN="$$-${RANDOM}${RANDOM}"
+  local token="$$-${RANDOM}${RANDOM}"
+  local token_tmp="" pid_tmp=""
+
+  # Prepare the pid first: while a successful mkdir owner is paused before
+  # publication, contenders can still identify this live initialization.
+  pid_tmp="$(mktemp "$PROFILES_DIR/.lock-pid.XXXXXX" 2>/dev/null)" || return 1
+  if ! printf '%s\n' "$$" 2>/dev/null > "$pid_tmp"; then
+    rm -f "$pid_tmp"
+    return 1
+  fi
+  if ! token_tmp="$(mktemp "$PROFILES_DIR/.lock-token.XXXXXX" 2>/dev/null)"; then
+    rm -f "$pid_tmp"
+    return 1
+  fi
+  if ! printf '%s\n' "$token" 2>/dev/null > "$token_tmp"; then
+    rm -f "$token_tmp" "$pid_tmp"
+    return 1
+  fi
+
+  if ! mkdir "$lock" 2>/dev/null; then
+    rm -f "$token_tmp" "$pid_tmp"
+    return 1
+  fi
+  # Publish pid before token so every contender's stale-owner decision is
+  # protected by kill -0. Renames are atomic on the same store filesystem and
+  # work where hard links do not.
+  if ! mv -f "$pid_tmp" "$lock/pid" 2>/dev/null; then
+    rm -f "$token_tmp" "$pid_tmp"
+    _cleanup_partial_lock_claim "$lock" "$token"
+    return 1
+  fi
+  pid_tmp=""
+  if [[ -L "$lock/pid" || ! -f "$lock/pid" || \
+        "$(cat "$lock/pid" 2>/dev/null || true)" != "$$" ]]; then
+    rm -f "$token_tmp"
+    _cleanup_partial_lock_claim "$lock" "$token"
+    return 1
+  fi
+  if ! mv -f "$token_tmp" "$lock/token" 2>/dev/null; then
+    rm -f "$token_tmp"
+    _cleanup_partial_lock_claim "$lock" "$token"
+    return 1
+  fi
+  token_tmp=""
+  if [[ -L "$lock/token" || ! -f "$lock/token" || \
+        "$(cat "$lock/token" 2>/dev/null || true)" != "$token" ]]; then
+    _cleanup_partial_lock_claim "$lock" "$token"
+    return 1
+  fi
+
+  _LOCK_TOKEN="$token"
+
+  trap _release_lock EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  return 0
+}
+
+_acquire_lock() {
+  # A migration and the command it precedes may both require the store lock.
+  # Re-entry by the same process is a no-op; the original ownership token and
+  # EXIT trap remain authoritative.
+  if [[ -n "$_LOCK_TOKEN" ]]; then
+    return 0
+  fi
+  ensure_dir
+  local lock="$PROFILES_DIR/.lock"
 
   local attempt
   for attempt in 1 2 3; do
-    if mkdir "$lock" 2>/dev/null; then
-      echo "$$" > "$lock/pid"
-      printf '%s\n' "$_LOCK_TOKEN" > "$lock/token"
-      trap _release_lock EXIT
-      trap 'exit 130' INT
-      trap 'exit 143' TERM
+    if _try_acquire_lock; then
       return 0
     fi
 
@@ -85,6 +200,16 @@ _acquire_lock() {
       # The owner may be between mkdir and writing its pid
       sleep 0.2
       pid="$(cat "$lock/pid" 2>/dev/null || true)"
+      if [[ -z "$pid" ]]; then
+        local pending_pid=""
+        if pending_pid="$(_pending_lock_owner_pid)"; then
+          err "Another claude-profile operation is in progress (pid $pending_pid)"
+        else
+          err "Profile lock metadata is incomplete; refusing unsafe takeover"
+          err "If no claude-profile process is starting, remove $lock"
+        fi
+        exit 1
+      fi
     fi
     if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
       err "Another claude-profile operation is in progress (pid $pid)"

@@ -77,13 +77,20 @@ Existing profiles receive the managed rules automatically. Their first
 subsequent save establishes the earliest recoverable memory baseline. Restoring
 a commit older than that baseline preserves current memory and prints a warning,
 because an absent path in the old commit means it was ignored, not necessarily
-that it did not exist.
+that it did not exist. Restore always preserves current session/disposable
+roots, even if an older bug or a manual force-add put those paths in a commit.
+Restore also refuses to remove or recreate an embedded Git repository in an
+ordinary tracked path: the outer profile history stores only its gitlink commit
+ID, not the nested repository's worktree, so applying that transition could
+otherwise delete data that the safety commit cannot recover.
 
-Rules outside claude-profile's marked managed block are preserved when the
-policy is refreshed. The managed block stays last so durable memory cannot be
-silently excluded by an older or global Git ignore rule. Save and diff also
-enforce the same boundary directly: nested ignore rules cannot hide durable
-memory or pull project transcripts into history.
+Rules outside claude-profile's marked managed block are preserved textually
+when the policy is refreshed, and still apply to ordinary profile paths. They
+cannot override the managed history boundary: standard durable memory is
+always versioned, while project transcripts and the other disposable roots are
+always excluded. There is currently no `.gitignore` opt-out for that boundary.
+Save and diff enforce it directly, so nested or global ignore rules cannot hide
+durable memory or pull project transcripts into history.
 
 History guarantees apply to the standard `agent-memory/**` and
 `projects/*/memory/**` locations. If Claude Code's `autoMemoryDirectory` points
