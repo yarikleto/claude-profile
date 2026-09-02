@@ -103,7 +103,9 @@ load test_helper
 {"cwd":"/x","model":{"id":"claude-opus-5","display_name":"Opus 5"},"version":"2.1.220"}
 JSON
 
-  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  # Execute the installed script directly so this covers its production
+  # shebang and executable bit, not only its body under the test runner's bash.
+  run "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
   [ "$status" -eq 0 ]
   [ "$output" = "Opus 5" ]
 }
@@ -146,6 +148,15 @@ JSON
   [ "$output" = "Claude" ]
 }
 
+@test "statusline script: does not use another object's name when model is absent" {
+  run_cli_ok statusline install
+  echo '{"agent":{"display_name":"Decoy Agent"}}' > "$BATS_TEST_TMPDIR/payload.json"
+
+  run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Claude" ]
+}
+
 @test "statusline script: appends the active profile name" {
   run_cli_ok fork work
   run_cli_ok use work
@@ -157,14 +168,14 @@ JSON
   [ "$output" = "Opus 5 · profile: work" ]
 }
 
-@test "statusline script: reads the model name when model holds a nested object" {
+@test "statusline script: falls back safely when model holds a nested object" {
   run_cli_ok statusline install
-  echo '{"model":{"caps":{"extended":true},"display_name":"Opus 5"}}' \
+  echo '{"agent":{"display_name":"Decoy Agent"},"model":{"caps":{"extended":true},"display_name":"Opus 5"}}' \
     > "$BATS_TEST_TMPDIR/payload.json"
 
   run bash "$CLAUDE_PROFILE_HOME/statusline.sh" < "$BATS_TEST_TMPDIR/payload.json"
   [ "$status" -eq 0 ]
-  [ "$output" = "Opus 5" ]
+  [ "$output" = "Claude" ]
 }
 
 @test "statusline script: reads model.display_name, not a later display_name" {

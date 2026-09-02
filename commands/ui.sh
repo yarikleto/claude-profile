@@ -103,25 +103,20 @@ cmd_statusline() {
 #!/bin/bash
 input=$(cat)
 # Claude Code pipes a JSON session payload here on every assistant message, so
-# the model name is read with bash's own regex engine — no jq, no forks.
+# the model name is read with bash's own regex engine — no jq or extraction
+# pipeline.
 #
-# Tier 1: the display_name inside the "model" object. [^{}] keeps the match
-# within that one object, and matches newlines too (POSIX regexec runs without
-# REG_NEWLINE), so compact and pretty-printed payloads both work. [{] is a
-# bracket expression to avoid the interval-expression meaning of \{.
+# Read display_name from the documented flat "model" object. [^{}] keeps the
+# match within that one object, and matches newlines too (POSIX regexec runs
+# without REG_NEWLINE), so compact and pretty-printed payloads both work. [{]
+# is a bracket expression to avoid the interval-expression meaning of \{.
 model=""
 _re='"model"[[:space:]]*:[[:space:]]*[{][^{}]*"display_name"[[:space:]]*:[[:space:]]*"([^"]*)"'
 if [[ "$input" =~ $_re ]]; then
   model="${BASH_REMATCH[1]}"
 fi
-# Tier 2: any display_name anywhere. Keep this — it is the last resort for a
-# payload where "model" gains a nested object and tier 1 stops matching.
-if [[ -z "$model" ]]; then
-  _re='"display_name"[[:space:]]*:[[:space:]]*"([^"]*)"'
-  if [[ "$input" =~ $_re ]]; then
-    model="${BASH_REMATCH[1]}"
-  fi
-fi
+# If that object changes shape, fail safely instead of displaying a
+# display_name that belongs to some other object in the payload.
 model="${model:-Claude}"
 # Resolve profiles dir: CLAUDE_PROFILE_HOME > XDG_DATA_HOME > default
 if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
