@@ -55,12 +55,48 @@ Next time you run `new`, it will use your custom templates.
 
 ## Git tracking
 
-Each profile has its own git history for tracking configuration changes. A static `.gitignore` excludes large data directories from git while still copying them between profiles:
+Each profile has its own git history for tracking configuration and durable
+memory changes. A managed `.gitignore` separates persistent memory from
+disposable/session data while all files are still copied between profiles:
 
-- **Git-tracked**: `settings.json`, `CLAUDE.md`, `agents/`, `skills/`, `rules/`, `keybindings.json`, `.claude-profile-home.json`, etc.
-- **Git-ignored** (still copied): `projects/`, `agent-memory/`, `todos/`, `plans/`, `tasks/`, `plugins/`, `history.jsonl`
+- **Git-tracked**: `settings.json`, `CLAUDE.md`, `agents/`, `skills/`, `rules/`, `keybindings.json`, `.claude-profile-home.json`,
+  `agent-memory/`, and `projects/*/memory/`.
+- **Git-ignored** (still copied): all other content under `projects/` (including
+  session transcripts), plus `todos/`, `plans/`, `tasks/`, `plugins/`, and
+  `history.jsonl`.
 
-This means `history`, `diff`, and `restore` commands only operate on config files, while all data is still fully isolated between profiles.
+This means `history`, `diff`, and `restore` cover persistent memory as well as
+configuration, without filling history with transcripts. Memory can contain
+personal preferences and project learnings; because it is versioned, deleting
+it from the live profile does not remove older copies from that profile's Git
+history. These repositories and Git objects stay local and are not uploaded by
+claude-profile, but they are plaintext and protected only by filesystem
+permissions.
+
+Existing profiles receive the managed rules automatically. Their first
+subsequent save establishes the earliest recoverable memory baseline. Restoring
+a commit older than that baseline preserves current memory and prints a warning,
+because an absent path in the old commit means it was ignored, not necessarily
+that it did not exist. Restore always preserves current session/disposable
+roots, even if an older bug or a manual force-add put those paths in a commit.
+Restore also refuses to remove or recreate an embedded Git repository in an
+ordinary tracked path: the outer profile history stores only its gitlink commit
+ID, not the nested repository's worktree, so applying that transition could
+otherwise delete data that the safety commit cannot recover.
+
+Rules outside claude-profile's marked managed block are preserved textually
+when the policy is refreshed, and still apply to ordinary profile paths. They
+cannot override the managed history boundary: standard durable memory is
+always versioned, while project transcripts and the other disposable roots are
+always excluded. There is currently no `.gitignore` opt-out for that boundary.
+Save and diff enforce it directly, so nested or global ignore rules cannot hide
+durable memory or pull project transcripts into history.
+
+History guarantees apply to the standard `agent-memory/**` and
+`projects/*/memory/**` locations. If Claude Code's `autoMemoryDirectory` points
+outside the configured Claude directory, that external directory is neither
+copied nor versioned. A custom location elsewhere inside the Claude directory
+is still snapshotted, but follows the ordinary history policy for that path.
 
 ## Statusline
 

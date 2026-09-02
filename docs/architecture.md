@@ -32,9 +32,11 @@ claude-profile              # Entrypoint: sources modules, dispatches commands
 lib/
   config.sh                 # Constants, XDG path resolution, SEED defaults
   output.sh                 # Colors, info/ok/warn/err helpers
+  profile_safety.sh         # Profile path confinement and symlink repair
   state.sh                  # get_current, set_current, backup, validation, seed
-  files.sh                  # All file operations between profiles and live paths
+  files.sh                  # Snapshot/load operations between profiles and live paths
   git.sh                    # Git history: init, commit, resolve ref
+  restore.sh                # Filtered restore apply and transactional rollback
 commands/
   profile.sh                # new, fork, use, save, deactivate
   info.sh                   # list, current, show, edit, delete
@@ -78,7 +80,7 @@ Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 ├── statusline.sh                           # statusline script for Claude Code
 ├── default/                                # a profile
 │   ├── .git/                               #   version history
-│   ├── .gitignore                          #   excludes large data dirs
+│   ├── .gitignore                          #   describes the history policy
 │   ├── settings.json
 │   ├── CLAUDE.md
 │   ├── agents/
@@ -106,13 +108,46 @@ name.
 
 ## Full-directory snapshots
 
-Profiles snapshot the **entire** `~/.claude/` directory. There is no distinction between "managed items" and "bulk items" — everything is captured. A static `.gitignore` excludes large data dirs from git tracking while still copying/moving them.
+Profiles snapshot the **entire** `~/.claude/` directory. There is no distinction
+between "managed items" and "bulk items" for copying or moving. A managed
+`.gitignore` describes which paths participate in profile history; staging also
+enforces the same boundary explicitly so nested ignore files cannot hide memory
+or re-include transcripts.
 
-Git-tracked (small config):
-- Everything not in `.gitignore`
+Lines outside the managed block remain in the file for ordinary paths, but
+they cannot override this boundary. Durable memory and disposable session data
+therefore have the same history behavior regardless of custom, nested, or
+global ignore rules.
 
-Git-ignored (large data, still copied/moved):
-- `projects/`, `agent-memory/`, `todos/`, `plans/`, `tasks/`, `plugins/`, `history.jsonl`
+Git-tracked (configuration and durable memory):
+- Everything not in `.gitignore`.
+- Explicitly, both `agent-memory/**` and `projects/*/memory/**`.
+
+Git-ignored (disposable/session data, still copied/moved):
+- Everything under `projects/` except each project's `memory/` subtree.
+- `todos/`, `plans/`, `tasks/`, `plugins/`, and `history.jsonl`.
+
+Store format 3 refreshes the tool-managed ignore block in existing profile
+repositories without staging or committing. Startup must not commit during this
+migration: the active profile can be moved-thin, with its tracked payload living
+in `~/.claude/`, so `git add -A` would record false deletions. The next normal
+save repopulates the profile before committing its first memory baseline.
+Mutating commands migrate while holding the normal exclusive lock. Read-only
+commands make one non-blocking migration attempt and skip it during contention,
+then release any optional lock before running a log, pager, or diff.
+
+The generated policy carries a history marker. Restore points with that marker
+have exact memory semantics, including deletions. For an older restore point,
+memory absence is unknowable because those paths were ignored, so restore
+preserves current memory and warns. The root `.gitignore` itself is never rolled
+back. Restore also filters disposable roots from historical trees, even if an
+older bug or manual force-add tracked them, so current transcripts and caches
+remain untouched. A target-only path that collides with current untracked,
+custom-ignored content causes restore to stop before changing the worktree.
+Embedded Git repositories in allowed paths also stop restore because an outer
+gitlink does not contain their worktree data. After applying a target, restore
+verifies its final history commit; if that commit cannot be recorded, it rolls
+the profile back to the complete safety tree instead of reporting success.
 
 ## Command flows
 
@@ -125,7 +160,7 @@ Creates a new profile from the current live state.
 2. Auto-save current profile     ← if one is active (cp)
 3. mkdir profile dir
 4. _snapshot_current()           ← cp ~/.claude/ + ~/.claude.json as .claude-profile-home.json
-5. _git_init()                   ← init git with static .gitignore
+5. _git_init()                   ← init Git with managed history policy
 6. set_current()
 ```
 
@@ -209,11 +244,25 @@ Defines constants and path resolution:
 - `PROFILES_DIR` — resolved via `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME` > default
 - `CLAUDE_DIR` — `${CLAUDE_CODE_HOME:-$HOME/.claude}`
 - `SEED_NAMES` / `SEED_CONTENTS` — fallback seed templates
-- `GITIGNORE_CONTENT` — static gitignore for large data dirs
+- `GITIGNORE_CONTENT` — managed policy for durable memory vs session data
+
+### `lib/profile_safety.sh`
+
+Lower-level safety primitives shared by file and Git operations:
+
+- `_assert_profile_path_safe` — reject symlinked roots and paths outside the store
+- `_materialize_profile_symlink` — safely replace one link with an independent copy
+- `_repair_profile_symlinks` — find and materialize links in stored payloads
+
+This module depends only on output and configuration helpers. Both `lib/git.sh`
+and `lib/files.sh` depend on it; `lib/git.sh` no longer calls into
+`lib/files.sh`.
 
 ### `lib/files.sh`
 
-All file operations. **Commands never copy/move files directly.**
+Persistent profile/live snapshot and load operations. **Commands never mutate
+live payload directly.** Read-only diff snapshots use an isolated scratch
+repository.
 
 | Function | Used by | Behavior |
 |----------|---------|----------|
@@ -239,9 +288,35 @@ Profile state management:
 
 Git operations for version history:
 
-- `_git_init` — init repo, write static `.gitignore`, initial commit
-- `_git_commit` — stage all + commit (no-op if nothing changed)
+- `_git_init` — init repo, write managed `.gitignore`, enforce policy, initial commit
+- `_git_commit` — enforce policy + transactionally commit (no-op if unchanged)
 - `_git_resolve_ref` — resolve commit hash or date string to a commit
+
+Commit staging uses a private index. The commit object is prepared first, the
+complete index is atomically published, and only then is `HEAD` advanced with a
+compare-and-swap ref update. Staging failures leave the real index untouched;
+an interruption cannot leave a new `HEAD` paired with a stale index. Inactive
+`diff` additionally uses a private object directory, so read-only inspection
+does not leave unreachable blobs in the profile repository.
+
+Before any profile Git operation, `.git` must be a real in-profile directory
+with no symlinked metadata or external worktree redirect. This prevents a
+corrupt or planted Git directory from redirecting saves into another
+repository.
+
+### `lib/restore.sh`
+
+Transactional restore primitives:
+
+- build a filtered target tree containing configuration and durable memory
+- reject untracked-path and embedded-repository collisions before applying it
+- apply and clean literal paths in bounded batches
+- restore `HEAD` with compare-and-swap and rematerialize the safety tree after
+  failure
+
+Restore deliberately spans Git refs, the index, and profile files, so these
+operations stay together here. `commands/history.sh` handles validation,
+read-only history queries, messaging, and orchestration.
 
 ### `commands/profile.sh`
 
@@ -271,12 +346,16 @@ When nothing would auto-save the live state — no profile is current (detached 
 
 ### Pre-validation before destructive switch
 
-`cmd_use` calls `_validate_profile_for_load` BEFORE saving the current profile. This ensures that if the target profile has issues (unreadable dirs, symlinks), the switch is aborted before any files are moved.
+`cmd_use` calls `_validate_profile_for_load` BEFORE saving the current profile.
+Valid symlinks in the target are materialized as independent copies. If that
+repair fails, or the target contains unreadable entries or broken symlinks, the
+switch is aborted before any live files are moved.
 
 ### Symlink protection
 
-- `_load_profile_to_live` skips symlinks in profile dirs (`! -L` check)
-- `_validate_profile_for_load` rejects nested symlinks inside directories
+- `_validate_profile_for_load` materializes valid profile symlinks and rejects
+  broken links before destructive operations
+- `_load_profile_to_live` accepts only non-symlink entries after validation
 - `_snapshot_current` follows symlinks at the source (user's live files are trusted) via `cp -RL`
 - Profile name validation rejects `..`, `/`, leading `.` or `-`
 

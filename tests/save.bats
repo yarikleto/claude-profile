@@ -13,6 +13,68 @@ load test_helper
   [[ "$log" == *"Updated settings"* ]]
 }
 
+@test "memory-only changes create a history commit" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory"
+  mkdir -p "$CLAUDE_CODE_HOME/agent-memory/researcher"
+  echo "auto v1" > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  echo "agent v1" > "$CLAUDE_CODE_HOME/agent-memory/researcher/MEMORY.md"
+  run_cli_ok fork default
+
+  local dir
+  dir="$(profile_dir default)"
+  local before
+  before="$(git -C "$dir" rev-list --count HEAD)"
+
+  echo "auto v2" > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  echo "agent v2" > "$CLAUDE_CODE_HOME/agent-memory/researcher/MEMORY.md"
+  run_cli_ok save -m "Updated durable memory"
+
+  [ "$(git -C "$dir" rev-list --count HEAD)" -eq $((before + 1)) ]
+  [ "$(git -C "$dir" show HEAD:projects/-repo/memory/MEMORY.md)" = "auto v2" ]
+  [ "$(git -C "$dir" show HEAD:agent-memory/researcher/MEMORY.md)" = "agent v2" ]
+  [[ "$(git -C "$dir" log -1 --format=%s)" == "Updated durable memory" ]]
+
+  run_cli history default
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Updated durable memory"* ]]
+}
+
+@test "memory-only deletions create a history commit" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory/topics"
+  mkdir -p "$CLAUDE_CODE_HOME/agent-memory/researcher"
+  echo "topic" > "$CLAUDE_CODE_HOME/projects/-repo/memory/topics/remove.md"
+  echo "agent" > "$CLAUDE_CODE_HOME/agent-memory/researcher/remove.md"
+  run_cli_ok fork default
+  local dir before
+  dir="$(profile_dir default)"
+  before="$(git -C "$dir" rev-list --count HEAD)"
+
+  rm "$CLAUDE_CODE_HOME/projects/-repo/memory/topics/remove.md"
+  rm -rf "$CLAUDE_CODE_HOME/agent-memory/researcher"
+  run_cli_ok save -m "Removed durable memory"
+
+  [ "$(git -C "$dir" rev-list --count HEAD)" -eq $((before + 1)) ]
+  git -C "$dir" cat-file -e "HEAD^:projects/-repo/memory/topics/remove.md"
+  git -C "$dir" cat-file -e "HEAD^:agent-memory/researcher/remove.md"
+  ! git -C "$dir" cat-file -e "HEAD:projects/-repo/memory/topics/remove.md" 2>/dev/null
+  ! git -C "$dir" cat-file -e "HEAD:agent-memory/researcher/remove.md" 2>/dev/null
+}
+
+@test "transcript-only save copies data without creating history" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo"
+  echo "session v1" > "$CLAUDE_CODE_HOME/projects/-repo/session.jsonl"
+  run_cli_ok fork default
+  local dir before
+  dir="$(profile_dir default)"
+  before="$(git -C "$dir" rev-list --count HEAD)"
+
+  echo "session v2" > "$CLAUDE_CODE_HOME/projects/-repo/session.jsonl"
+  run_cli_ok save -m "Session churn"
+
+  [ "$(cat "$dir/projects/-repo/session.jsonl")" = "session v2" ]
+  [ "$(git -C "$dir" rev-list --count HEAD)" -eq "$before" ]
+}
+
 @test "with explicit name" {
   run_cli_ok fork default
   run_cli_ok use default

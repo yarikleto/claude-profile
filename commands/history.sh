@@ -6,9 +6,10 @@ cmd_history() {
   _require_profile_exists "$name"
 
   local profile_dir="$PROFILES_DIR/$name"
-  if [[ ! -d "$profile_dir/.git" ]]; then
+  if [[ ! -e "$profile_dir/.git" && ! -L "$profile_dir/.git" ]]; then
     warn "No history for profile $(_pname "$name")"; return
   fi
+  _git_require_safe_profile_repo "$profile_dir" || return 1
 
   echo -e "${CYAN}${BOLD}History: $name${NC}"
   echo ""
@@ -39,9 +40,10 @@ cmd_diff() {
   _require_profile_name "$name" "claude-profile diff [name] [commit|date]"
 
   local profile_dir="$PROFILES_DIR/$name"
-  if [[ ! -d "$profile_dir/.git" ]]; then
+  if [[ ! -e "$profile_dir/.git" && ! -L "$profile_dir/.git" ]]; then
     warn "No history for profile $(_pname "$name")"; return
   fi
+  _git_require_safe_profile_repo "$profile_dir" || return 1
 
   if [[ -z "$ref" ]]; then
     _diff_unsaved "$name" "$profile_dir"
@@ -103,14 +105,8 @@ _prepare_diff_baseline_repo() {
     printf '%s\n' "$ignore_content" >> "$repo/.git/info/exclude"
   fi
   rm -f "$repo/.gitignore"
-  git -C "$repo" add -A -- . || return 1
+  _git_stage_history_paths "$repo" || return 1
   git -C "$repo" commit -q -m "Diff baseline" --allow-empty || return 1
-}
-
-_diff_git_status() {
-  local repo="$1"
-  git -C "$repo" status --porcelain --untracked-files=all -- . ':!.gitignore' \
-    | sed 's/^/  /'
 }
 
 _print_diff_changes() {
@@ -148,18 +144,27 @@ _diff_active_unsaved() {
 
 _diff_profile_unsaved() {
   local profile_dir="$1"
-  _print_diff_changes "$(_diff_git_status "$profile_dir")"
+  local changes rc=0
+  changes="$(_diff_git_status "$profile_dir")" || rc=$?
+  [[ "$rc" -eq 0 ]] || return "$rc"
+
+  _print_diff_changes "$changes"
 }
 
 _diff_unsaved() {
   local name="$1" profile_dir="$2"
+  local diff_rc=0
   echo -e "${CYAN}${BOLD}Unsaved changes: $name${NC}"
   echo ""
 
   if [[ "$(get_current)" == "$name" ]]; then
-    _diff_active_unsaved "$profile_dir"
+    _diff_active_unsaved "$profile_dir" || diff_rc=$?
   else
-    _diff_profile_unsaved "$profile_dir"
+    _diff_profile_unsaved "$profile_dir" || diff_rc=$?
+  fi
+  if [[ "$diff_rc" -ne 0 ]]; then
+    err "Could not inspect unsaved changes for $(_pname "$name")"
+    return "$diff_rc"
   fi
 }
 
@@ -206,13 +211,14 @@ cmd_restore() {
   fi
 
   local profile_dir="$PROFILES_DIR/$name"
-  # Restore runs Git mutations (git rm -rf ., checkout) directly on this dir —
-  # gate it on the same path-safety check as the file primitives so a symlinked
-  # profile root can't point them at files outside the store.
+  # Restore applies Git index/worktree mutations directly to this directory.
+  # Gate it on the same path and metadata checks as the file primitives so a
+  # symlink or redirected repository cannot target files outside the store.
   _assert_profile_path_safe "$profile_dir"
-  if [[ ! -d "$profile_dir/.git" ]]; then
+  if [[ ! -e "$profile_dir/.git" && ! -L "$profile_dir/.git" ]]; then
     err "No history for profile $(_pname "$name")"; exit 1
   fi
+  _git_require_safe_profile_repo "$profile_dir" || exit 1
 
   local resolved
   resolved="$(_git_resolve_ref "$profile_dir" "$ref")"
@@ -230,25 +236,101 @@ cmd_restore() {
   fi
   # The rollback deletes the working tree first — proceed only if that
   # safety-net commit actually landed
-  if [[ -n "$(git -C "$profile_dir" status --porcelain 2>/dev/null)" ]]; then
+  local safety_changes="" safety_rc=0
+  safety_changes="$(_diff_git_status "$profile_dir")" || safety_rc=$?
+  if [[ "$safety_rc" -ne 0 || -n "$safety_changes" ]]; then
     err "Unsaved changes could not be committed — aborting restore (profile and live files untouched)"
     err "Fix git in $profile_dir (e.g. configure user.name/user.email), then retry"
     exit 1
   fi
 
-  # Full rollback: remove tracked files that don't exist in the target commit,
-  # then restore the target's files. Plain `git checkout <ref> -- .` only
-  # updates paths present in the target — it won't delete files added later.
-  if ! git -C "$profile_dir" rm -rf --quiet . 2>/dev/null; then
-    err "Failed to clean working tree for $ref — profile unchanged"
+  local preserve_memory=false
+  if ! _git_ref_has_memory_history "$profile_dir" "$resolved"; then
+    preserve_memory=true
+    warn "Target predates memory history — preserving current projects/*/memory and agent-memory"
+  else
+    info "Durable memory will be restored to the selected revision; session data is preserved"
+  fi
+  # Construct the exact tree restore is allowed to apply before touching the
+  # worktree. This deliberately filters disposable roots even when an older or
+  # manually polluted commit tracked them. For a legacy target it also merges
+  # the safety commit's current memory into the target tree.
+  local rollback_commit="" rollback_tree="" target_tree=""
+  local restore_error="" restore_rc=0
+  if ! rollback_commit="$(git -C "$profile_dir" rev-parse \
+      --verify 'HEAD^{commit}' 2>/dev/null)" ||
+     ! rollback_tree="$(git -C "$profile_dir" rev-parse \
+      --verify "${rollback_commit}^{tree}" 2>/dev/null)" ||
+     ! target_tree="$(_restore_build_target_tree \
+        "$profile_dir" "$resolved" "$preserve_memory")"; then
+    err "Could not prepare $ref — rollback not started; current state was saved"
     exit 1
   fi
-  if ! git -C "$profile_dir" checkout "$resolved" -- . 2>/dev/null; then
-    git -C "$profile_dir" checkout HEAD -- . 2>/dev/null || true
-    err "Failed to check out $ref — the profile was restored to its last saved state instead"
+
+  # Apply the filtered tree without putting ignored session roots through
+  # read-tree's worktree update, which may delete ignored directories. If Git
+  # fails partway, restore the complete safety tree and remove target-only
+  # paths before claiming recovery.
+  restore_error="$(_restore_apply_target_tree \
+    "$profile_dir" "$rollback_tree" "$target_tree" 2>&1)" || restore_rc=$?
+  if [[ "$restore_rc" -ne 0 ]]; then
+    if [[ -n "$restore_error" ]]; then
+      err "Failed to apply $ref: $restore_error"
+    else
+      err "Failed to apply $ref"
+    fi
+    if [[ "$restore_rc" -eq 2 ]]; then
+      err "Restore was not started; the saved profile and live files are unchanged"
+      exit 1
+    fi
+    if _restore_profile_after_failure \
+        "$profile_dir" "$rollback_tree" "$target_tree" \
+        "$rollback_commit" "$rollback_commit"; then
+      err "The profile was restored to its last saved state instead"
+    else
+      err "The profile may be partially changed; its last saved state remains recoverable as commit $rollback_commit"
+    fi
     exit 1
   fi
-  _git_commit "$profile_dir" "Restored to $ref"
+  local commit_rc=0 committed_head="" committed_head_rc=0 recorded_head=""
+  local committed_changes="" committed_diff_rc=0
+  _git_commit "$profile_dir" "Restored to $ref" || commit_rc=$?
+  recorded_head="$_GIT_COMMIT_HEAD"
+  committed_head="$(git -C "$profile_dir" rev-parse \
+    --verify 'HEAD^{commit}' 2>/dev/null)" || committed_head_rc=$?
+  if [[ "$commit_rc" -eq 0 && "$committed_head_rc" -eq 0 &&
+        -n "$recorded_head" && "$committed_head" == "$recorded_head" ]]; then
+    committed_changes="$(_diff_git_status "$profile_dir")" || committed_diff_rc=$?
+  fi
+  if [[ "$commit_rc" -ne 0 || "$committed_head_rc" -ne 0 ||
+        -z "$recorded_head" || "$committed_head" != "$recorded_head" ||
+        "$committed_diff_rc" -ne 0 ||
+        -n "$committed_changes" ]]; then
+    local rollback_expected=""
+    if [[ "$committed_head_rc" -eq 0 ]]; then
+      if [[ -n "$recorded_head" && "$committed_head" == "$recorded_head" ]]; then
+        rollback_expected="$committed_head"
+      elif [[ -z "$recorded_head" &&
+              "$committed_head" == "$rollback_commit" ]]; then
+        rollback_expected="$committed_head"
+      fi
+    fi
+    if [[ -n "$rollback_expected" ]]; then
+      err "Could not record restored state — rolling back"
+      if _restore_profile_after_failure \
+          "$profile_dir" "$rollback_tree" "$target_tree" \
+          "$rollback_commit" "$rollback_expected"; then
+        err "The profile was restored to its last saved state instead"
+      else
+        err "The profile may be partially changed; its last saved state remains recoverable as commit $rollback_commit"
+      fi
+    else
+      err "Could not record restored state"
+      err "Git history changed during restore; refusing to overwrite a different HEAD"
+      err "The profile may be partially changed; its last saved state remains recoverable as commit $rollback_commit"
+    fi
+    exit 1
+  fi
 
   # If active, reload into live locations
   if [[ "$(get_current)" == "$name" ]]; then

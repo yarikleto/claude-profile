@@ -1,25 +1,5 @@
 # files.sh — Full-directory operations between live ~/.claude/ and profile directories
 
-# Gate every file/git mutation on a profile path. The clear/copy/rm loops
-# below follow whatever `$dst/*` expands to, so a profile root that is a
-# symlink (or otherwise resolves outside the store) would let `rm -rf` and
-# `mv` reach unrelated files. Refuse a symlinked leaf, and refuse anything that
-# does not canonically live within the store. Call BEFORE touching the path.
-_assert_profile_path_safe() {
-  local target="$1"
-  if [[ -L "$target" ]]; then
-    err "Refusing to operate on a symlinked profile path: $target"
-    exit 1
-  fi
-  local canon store
-  canon="$(_canonical_path "$target")"
-  store="$(_canonical_path "$PROFILES_DIR")"
-  if [[ "$canon" != "$store" && "$canon" != "$store"/* ]]; then
-    err "Refusing to operate outside the profile store: $target"
-    exit 1
-  fi
-}
-
 # Directory entries the tool never copies, moves, or deletes when syncing
 # between live ~/.claude/ and profile dirs:
 #   .  ..            directory self / parent
@@ -315,7 +295,13 @@ _save_current_to() {
   else
     rm -rf "$dst_home"
   fi
-  _git_commit "$dst" "$msg"
+  if [[ "$move" == "--move" ]]; then
+    _git_commit "$dst" "$msg"
+  else
+    # Every payload entry was replaced from cp -RL output above, so no symlink
+    # can remain outside the separately managed .git/.gitignore metadata.
+    _git_commit "$dst" "$msg" --payload-materialized
+  fi
 }
 
 # Move live entries into a profile directory WITHOUT removing anything else
@@ -344,41 +330,13 @@ _sweep_live_entries_to() {
   fi
 }
 
-# Auto-repair symlinks left by older save code (which used cp -RH instead of cp -RL).
-# Replaces each symlink with a regular copy of its target. Fails on broken symlinks.
-_repair_profile_symlinks() {
-  local profile_dir="$1"
-  local repaired=0
-  local symlink
-  while IFS= read -r -d '' symlink; do
-    # Broken symlink: -L is true but -e is false
-    if [[ ! -e "$symlink" ]]; then
-      err "Broken symlink in profile: $symlink — aborting switch (live files untouched)"
-      return 1
-    fi
-    # Replace symlink with dereferenced copy
-    local tmp="${symlink}.repair.$$"
-    if ! cp -RL "$symlink" "$tmp" 2>/dev/null; then
-      rm -rf "$tmp"
-      err "Cannot resolve symlink in profile — aborting switch (live files untouched)"
-      return 1
-    fi
-    rm "$symlink"
-    mv "$tmp" "$symlink"
-    repaired=$((repaired + 1))
-  done < <(find "$profile_dir" -not -path "$profile_dir/.git/*" -not -name ".git" -not -name ".gitignore" -type l -print0 2>/dev/null)
-
-  if [[ $repaired -gt 0 ]]; then
-    warn "Repaired $repaired symlink(s) in profile (from older save format)"
-  fi
-}
-
-# Pre-validate a profile directory is safe to load (no symlinks, all readable).
+# Materialize valid profile symlinks, then verify the profile is safe to load.
 # Call this BEFORE any destructive operations (like --move save).
 _validate_profile_for_load() {
   local profile_dir="$1"
+  _assert_profile_path_safe "$profile_dir"
 
-  # Auto-repair symlinks from older save code, then validate the rest
+  # Stored symlinks can come from an interrupted move-mode switch.
   _repair_profile_symlinks "$profile_dir" || return 1
 
   local f

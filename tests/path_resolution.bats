@@ -69,6 +69,19 @@ load test_helper
   [ -d "$real/default" ]
 }
 
+@test "path: diff works with a relative profile store" {
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory"
+  echo v1 > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  cd "$BATS_TEST_TMPDIR"
+  export CLAUDE_PROFILE_HOME="relative-store"
+  run_cli_ok fork default
+
+  echo v2 > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  run_cli diff
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"projects/-repo/memory/MEMORY.md"* ]]
+}
+
 @test "path: save refuses a symlinked profile root and never touches its target" {
   run_cli_ok fork real
   local ext="$BATS_TEST_TMPDIR/external"
@@ -79,4 +92,21 @@ load test_helper
   run_cli save evil
   [ "$status" -ne 0 ]
   [ -f "$ext/canary.txt" ]      # external file survives — no rm -rf through the symlink
+}
+
+@test "path: use refuses a symlinked profile root before repairing its payload" {
+  run_cli_ok fork safe
+  local external="$BATS_TEST_TMPDIR/external-profile-target"
+  mkdir -p "$external"
+  echo external-canary > "$external/settings.json"
+  ln -s "$external" "$CLAUDE_PROFILE_HOME/redirected"
+  echo live-safe > "$CLAUDE_CODE_HOME/settings.json"
+
+  run_cli use redirected
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"symlinked profile path"* ]]
+  [ -L "$CLAUDE_PROFILE_HOME/redirected" ]
+  [ "$(cat "$external/settings.json")" = external-canary ]
+  [ "$(cat "$CLAUDE_CODE_HOME/settings.json")" = live-safe ]
 }

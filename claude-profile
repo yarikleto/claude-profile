@@ -18,19 +18,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ─── Load modules ──────────────────────────────────────────
 source "$SCRIPT_DIR/lib/output.sh"
 source "$SCRIPT_DIR/lib/config.sh"
+source "$SCRIPT_DIR/lib/profile_safety.sh"
 source "$SCRIPT_DIR/lib/git.sh"
 source "$SCRIPT_DIR/lib/state.sh"
 source "$SCRIPT_DIR/lib/files.sh"
+source "$SCRIPT_DIR/lib/restore.sh"
 source "$SCRIPT_DIR/commands/profile.sh"
 source "$SCRIPT_DIR/commands/info.sh"
 source "$SCRIPT_DIR/commands/history.sh"
 source "$SCRIPT_DIR/commands/ui.sh"
-
-# Bring an existing store up to the current on-disk format before any command
-# reads or writes profiles. Idempotent (runs once per upgrade via a stamp).
-# Best-effort: the load path tolerates the old layout, so an odd profile dir
-# that can't be migrated must not abort (and thereby brick) every command.
-_migrate_store_format || true
 
 # ─── Dispatch ──────────────────────────────────────────────
 cmd="${1:-help}"
@@ -41,9 +37,32 @@ shift 2>/dev/null || true
 # statusline is included: `statusline install` writes both the store and live
 # settings.json, so it can race a switch without the lock. Locking its bare
 # usage path too is harmless.
+command_mutates=false
 case "$cmd" in
-  new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore|statusline) _acquire_lock ;;
+  new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore|statusline)
+    command_mutates=true
+    ;;
 esac
+
+# Bring an existing store up to the current on-disk format before commands
+# that change it. Mandatory writers claim the lock first, then migrate: this
+# also stamps a brand-new store created by the lock itself. Read-only commands
+# retain eager migration when the store is idle, but a one-shot failed claim is
+# silently skipped so list/history/help remain available during a live write.
+# Release an optional migration lock before dispatch — a pager or a large diff
+# must never block subsequent profile mutations.
+if [[ "$command_mutates" == true ]]; then
+  _acquire_lock
+  if _store_needs_migration; then
+    _migrate_store_format || true
+  fi
+  _refuse_newer_store_format_for_write
+elif _store_needs_migration; then
+  if _try_acquire_lock; then
+    _migrate_store_format || true
+    _release_lock
+  fi
+fi
 
 case "$cmd" in
   new)            cmd_new "$@" ;;
