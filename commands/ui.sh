@@ -102,7 +102,21 @@ cmd_statusline() {
       cat > "$statusline_script" <<'SCRIPT'
 #!/bin/bash
 input=$(cat)
-model=$(echo "$input" | grep -o '"display_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+# Claude Code pipes a JSON session payload here on every assistant message, so
+# the model name is read with bash's own regex engine — no jq or extraction
+# pipeline.
+#
+# Read display_name from the documented flat "model" object. [^{}] keeps the
+# match within that one object, and matches newlines too (POSIX regexec runs
+# without REG_NEWLINE), so compact and pretty-printed payloads both work. [{]
+# is a bracket expression to avoid the interval-expression meaning of \{.
+model=""
+_re='"model"[[:space:]]*:[[:space:]]*[{][^{}]*"display_name"[[:space:]]*:[[:space:]]*"([^"]*)"'
+if [[ "$input" =~ $_re ]]; then
+  model="${BASH_REMATCH[1]}"
+fi
+# If that object changes shape, fail safely instead of displaying a
+# display_name that belongs to some other object in the payload.
 model="${model:-Claude}"
 # Resolve profiles dir: CLAUDE_PROFILE_HOME > XDG_DATA_HOME > default
 if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
