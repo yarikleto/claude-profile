@@ -33,9 +33,11 @@ VERSION                     # Single source of truth for the release version
 lib/
   config.sh                 # Constants, XDG path resolution, seed defaults
   output.sh                 # Colors, info/ok/warn/err helpers
+  profile_safety.sh         # Profile path confinement and symlink repair
   state.sh                  # get_current, set_current, backup, validation helpers
   files.sh                  # Full-directory operations between profiles and live paths
   git.sh                    # Git history: init, commit, resolve ref
+  restore.sh                # Filtered restore apply and transactional rollback
 commands/
   profile.sh                # new, fork, use, save, deactivate
   info.sh                   # list, current, show, edit, delete
@@ -53,8 +55,9 @@ completions/
 ### Key principles
 
 - **One file = one responsibility**. Commands are in `commands/`, shared logic in `lib/`.
-- **All file operations go through `lib/files.sh`**. Never copy/remove files directly in command files — use `_snapshot_current`, `_save_current_to`, `_load_profile_to_live`, `_restore_from_backup`, `_seed_profile`.
-- **All git operations go through `lib/git.sh`**. Never call `git` directly in command files — use `_git_init`, `_git_commit`, `_git_resolve_ref`.
+- **Profile path confinement and stored symlink repair live in `lib/profile_safety.sh`**. It is a lower-level dependency of both `lib/git.sh` and `lib/files.sh`; it must not call into either module.
+- **Persistent profile/live snapshot mutations go through `lib/files.sh`**. Never change live payload directly in command files — use `_snapshot_current`, `_save_current_to`, `_load_profile_to_live`, `_restore_from_backup`, `_seed_profile`. Read-only diff snapshots may use a scratch directory.
+- **Shared Git safety, history policy, status, and commit transactions live in `lib/git.sh`**. Restore-specific tree filtering, worktree application, and rollback live in `lib/restore.sh`; command files handle validation, read-only queries, messaging, and orchestration.
 - **Profiles are independent copies, not symlinks**. Switching copies/moves the entire `~/.claude/` directory.
 - **The original backup (`.pre-profiles-backup/`) is never overwritten or deleted by normal profile operations** after creation. It's the safety net.
 - **Profiles are stored in XDG-compliant location** (`~/.local/share/claude-profile/`), separate from `~/.claude/`. Startup refuses a store nested inside `~/.claude/` (or the reverse) — the switch loops would destroy the store.

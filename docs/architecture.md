@@ -32,9 +32,11 @@ claude-profile              # Entrypoint: sources modules, dispatches commands
 lib/
   config.sh                 # Constants, XDG path resolution, SEED defaults
   output.sh                 # Colors, info/ok/warn/err helpers
+  profile_safety.sh         # Profile path confinement and symlink repair
   state.sh                  # get_current, set_current, backup, validation, seed
-  files.sh                  # All file operations between profiles and live paths
+  files.sh                  # Snapshot/load operations between profiles and live paths
   git.sh                    # Git history: init, commit, resolve ref
+  restore.sh                # Filtered restore apply and transactional rollback
 commands/
   profile.sh                # new, fork, use, save, deactivate
   info.sh                   # list, current, show, edit, delete
@@ -244,9 +246,23 @@ Defines constants and path resolution:
 - `SEED_NAMES` / `SEED_CONTENTS` — fallback seed templates
 - `GITIGNORE_CONTENT` — managed policy for durable memory vs session data
 
+### `lib/profile_safety.sh`
+
+Lower-level safety primitives shared by file and Git operations:
+
+- `_assert_profile_path_safe` — reject symlinked roots and paths outside the store
+- `_materialize_profile_symlink` — safely replace one link with an independent copy
+- `_repair_profile_symlinks` — find and materialize links in stored payloads
+
+This module depends only on output and configuration helpers. Both `lib/git.sh`
+and `lib/files.sh` depend on it; `lib/git.sh` no longer calls into
+`lib/files.sh`.
+
 ### `lib/files.sh`
 
-All file operations. **Commands never copy/move files directly.**
+Persistent profile/live snapshot and load operations. **Commands never mutate
+live payload directly.** Read-only diff snapshots use an isolated scratch
+repository.
 
 | Function | Used by | Behavior |
 |----------|---------|----------|
@@ -288,6 +304,20 @@ with no symlinked metadata or external worktree redirect. This prevents a
 corrupt or planted Git directory from redirecting saves into another
 repository.
 
+### `lib/restore.sh`
+
+Transactional restore primitives:
+
+- build a filtered target tree containing configuration and durable memory
+- reject untracked-path and embedded-repository collisions before applying it
+- apply and clean literal paths in bounded batches
+- restore `HEAD` with compare-and-swap and rematerialize the safety tree after
+  failure
+
+Restore deliberately spans Git refs, the index, and profile files, so these
+operations stay together here. `commands/history.sh` handles validation,
+read-only history queries, messaging, and orchestration.
+
 ### `commands/profile.sh`
 
 Core operations: `new`, `fork`, `use`, `save`, `deactivate`. All follow the same pattern:
@@ -316,12 +346,16 @@ When nothing would auto-save the live state — no profile is current (detached 
 
 ### Pre-validation before destructive switch
 
-`cmd_use` calls `_validate_profile_for_load` BEFORE saving the current profile. This ensures that if the target profile has issues (unreadable dirs, symlinks), the switch is aborted before any files are moved.
+`cmd_use` calls `_validate_profile_for_load` BEFORE saving the current profile.
+Valid symlinks in the target are materialized as independent copies. If that
+repair fails, or the target contains unreadable entries or broken symlinks, the
+switch is aborted before any live files are moved.
 
 ### Symlink protection
 
-- `_load_profile_to_live` skips symlinks in profile dirs (`! -L` check)
-- `_validate_profile_for_load` rejects nested symlinks inside directories
+- `_validate_profile_for_load` materializes valid profile symlinks and rejects
+  broken links before destructive operations
+- `_load_profile_to_live` accepts only non-symlink entries after validation
 - `_snapshot_current` follows symlinks at the source (user's live files are trusted) via `cp -RL`
 - Profile name validation rejects `..`, `/`, leading `.` or `-`
 

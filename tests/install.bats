@@ -29,9 +29,11 @@ setup() {
   local lib="$CLAUDE_PROFILE_INSTALL_DIR/claude-profile-lib"
   [ -f "$lib/lib/config.sh" ]
   [ -f "$lib/lib/output.sh" ]
+  [ -f "$lib/lib/profile_safety.sh" ]
   [ -f "$lib/lib/state.sh" ]
   [ -f "$lib/lib/files.sh" ]
   [ -f "$lib/lib/git.sh" ]
+  [ -f "$lib/lib/restore.sh" ]
   [ -f "$lib/commands/profile.sh" ]
   [ -f "$lib/commands/info.sh" ]
   [ -f "$lib/commands/history.sh" ]

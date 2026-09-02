@@ -60,11 +60,10 @@ _release_lock() {
   return 0
 }
 
-# Resolve the process that owns pending lock metadata. New temp names embed the
-# PID so a SIGKILL between mktemp and the first write is still recoverable;
-# contents remain authoritative for older temp names.
+# Resolve the process that owns pending lock metadata. Temp names embed the PID
+# so a SIGKILL between mktemp and the first write is still recoverable.
 _lock_temp_owner_pid() {
-  local pending="$1" base value="" pid="" remainder=""
+  local pending="$1" base pid remainder
   if [[ -L "$pending" || ! -f "$pending" ]]; then
     return 1
   fi
@@ -72,33 +71,16 @@ _lock_temp_owner_pid() {
   case "$base" in
     .lock-pid.*)
       remainder="${base#.lock-pid.}"
-      if [[ "$remainder" == *.* && \
-            "${remainder%%.*}" =~ ^[0-9]+$ ]]; then
-        pid="${remainder%%.*}"
-      else
-        value="$(cat "$pending" 2>/dev/null || true)"
-        if [[ "$value" =~ ^[0-9]+$ ]]; then
-          pid="$value"
-        fi
-      fi
       ;;
     .lock-token.*)
       remainder="${base#.lock-token.}"
-      if [[ "$remainder" == *.* && \
-            "${remainder%%.*}" =~ ^[0-9]+$ ]]; then
-        pid="${remainder%%.*}"
-      else
-        value="$(cat "$pending" 2>/dev/null || true)"
-        if [[ "$value" =~ ^[0-9]+-[0-9]+$ ]]; then
-          pid="${value%%-*}"
-        fi
-      fi
       ;;
     *)
       return 1
       ;;
   esac
-  if [[ -z "$pid" ]]; then
+  pid="${remainder%%.*}"
+  if [[ "$remainder" != *.* || ! "$pid" =~ ^[0-9]+$ ]]; then
     return 1
   fi
   printf '%s\n' "$pid"

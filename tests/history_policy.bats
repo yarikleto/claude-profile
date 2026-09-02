@@ -181,6 +181,30 @@ EOF
   git -C "$dir" diff --cached --quiet
 }
 
+@test "save does not replace a corrupt HEAD with new root history" {
+  run_cli_ok fork default
+
+  local dir before_index head_ref corrupt_oid
+  dir="$(profile_dir default)"
+  before_index="$BATS_TEST_TMPDIR/index-before-corrupt-head"
+  cp "$dir/.git/index" "$before_index"
+  head_ref="$(git -C "$dir" symbolic-ref HEAD)"
+  corrupt_oid=1111111111111111111111111111111111111111
+  printf '%s\n' "$corrupt_oid" > "$dir/.git/$head_ref"
+
+  echo '{"saved_despite_corrupt_history": true}' > \
+    "$CLAUDE_CODE_HOME/settings.json"
+  run_cli save -m corrupt-head
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"history skipped"* ]]
+  [ "$(git -C "$dir" symbolic-ref HEAD)" = "$head_ref" ]
+  [ "$(tr -d '\n' < "$dir/.git/$head_ref")" = "$corrupt_oid" ]
+  ! git -C "$dir" rev-parse --verify 'HEAD^{commit}' >/dev/null 2>&1
+  cmp -s "$before_index" "$dir/.git/index"
+  grep -q saved_despite_corrupt_history "$dir/settings.json"
+}
+
 @test "successful no-change staging repairs an already polluted real index" {
   mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory"
   mkdir -p "$CLAUDE_CODE_HOME/agent-memory/researcher"

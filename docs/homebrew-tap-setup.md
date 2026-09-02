@@ -80,7 +80,7 @@ What the formula does:
 1. **Downloads** the tagged tarball from the main repo
 2. **Installs `lib/` and `commands/`** to `libexec` — Homebrew's standard location for internal files that shouldn't be in PATH (`$(brew --prefix)/Cellar/claude-profile/0.1.0/libexec/`)
 3. **Installs `claude-profile`** to `bin` — Homebrew symlinks this into PATH (`$(brew --prefix)/bin/`)
-4. **Patches `SCRIPT_DIR`** — replaces the line `SCRIPT_DIR="$(cd ...)"` with a hardcoded path to `libexec`, so the installed binary finds its modules. Same thing `install.sh` does with `sed`.
+4. **Patches `SCRIPT_DIR`** — replaces the line `SCRIPT_DIR="$(cd ...)"` with a hardcoded path to `libexec`, so the installed binary finds its modules. `install.sh` applies the same relocation.
 5. **Installs completions** — Homebrew has built-in helpers (`zsh_completion`, `bash_completion`) that put files in the right place and make them discoverable automatically. No manual PATH or `fpath` setup needed.
 
 The resulting file layout:
@@ -95,9 +95,11 @@ $(brew --prefix)/
 │       ├── lib/
 │       │   ├── config.sh
 │       │   ├── output.sh
+│       │   ├── profile_safety.sh
 │       │   ├── state.sh
 │       │   ├── files.sh
-│       │   └── git.sh
+│       │   ├── git.sh
+│       │   └── restore.sh
 │       └── commands/
 │           ├── profile.sh
 │           ├── info.sh

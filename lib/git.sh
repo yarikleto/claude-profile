@@ -1,5 +1,9 @@
 # git.sh — Git history tracking for profile directories
 
+# Expected HEAD after the most recent _git_commit transaction. It stays empty
+# when history was skipped or ref publication failed.
+_GIT_COMMIT_HEAD=""
+
 _git_history_warn() {
   local dir="$1" why="$2"
   warn "Could not record history for '$(basename "$dir")' ($why) — files saved, history skipped"
@@ -262,6 +266,66 @@ _git_stage_history_paths() (
   fi
 )
 
+# Report versioned worktree changes without modifying the repository's real
+# index or object store. Restore uses this to verify its safety snapshots; diff
+# uses it to inspect inactive profiles.
+_diff_git_status() (
+  local repo="$1"
+  local scratch index objects git_dir real_objects changes
+
+  if ! git_dir="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)"; then
+    return 1
+  fi
+  real_objects="$git_dir/objects"
+  if ! scratch="$(mktemp -d "$PROFILES_DIR/.diff-work.XXXXXX")"; then
+    return 1
+  fi
+  trap 'rm -rf -- "$scratch"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  scratch="$(_canonical_path "$scratch")"
+  # Keep both the alternate index and any blobs hashed by `git add` outside
+  # the profile repository. The real object directory is read-only alternate
+  # storage, so an inactive `diff` does not mutate an otherwise read-only repo.
+  index="$scratch/index"
+  objects="$scratch/objects"
+  if ! mkdir -p "$objects/info"; then
+    return 1
+  fi
+  # GIT_ALTERNATE_OBJECT_DIRECTORIES is colon-delimited, so an alternates file
+  # is both safer and compatible with ':' in the store path. Its normal format
+  # accepts the absolute path directly and works on filesystems without
+  # symlinks. Only a literal newline needs indirection because the file is
+  # line-delimited; a fixed relative entry points at a scratch symlink then.
+  if [[ "$real_objects" == *$'\n'* ]]; then
+    if ! ln -s "$real_objects" "$objects/alternate" ||
+       ! printf 'alternate\n' > "$objects/info/alternates"; then
+      return 1
+    fi
+  elif ! printf '%s\n' "$real_objects" > "$objects/info/alternates"; then
+    return 1
+  fi
+
+  export GIT_INDEX_FILE="$index"
+  export GIT_OBJECT_DIRECTORY="$objects"
+  unset GIT_ALTERNATE_OBJECT_DIRECTORIES
+
+  if ! git -C "$repo" read-tree HEAD 2>/dev/null; then
+    return 1
+  fi
+  if ! _git_stage_history_paths "$repo" "$index"; then
+    return 1
+  fi
+  if ! changes="$(git -C "$repo" diff \
+      --cached --name-status --no-renames HEAD -- . \
+      ':(exclude).gitignore' 2>/dev/null)"; then
+    return 1
+  fi
+  if [[ -n "$changes" ]]; then
+    printf '%s\n' "$changes" | sed 's/^/  /'
+  fi
+)
+
 # Commits carrying the marker have exact memory semantics: a missing memory
 # path means it was absent. Older commits ignored memory, so absence is
 # unknowable and restore must preserve the current memory instead.
@@ -283,7 +347,10 @@ _git_commit_history_transaction() {
   local dir="$1" msg="$2" allow_empty="${3:-false}"
   local index backup real_index old_index_present=false
   local old_head="" old_tree="" new_tree="" new_commit=""
+  local head_ref="" head_ref_status=0
   local has_head=false changed=false
+
+  _GIT_COMMIT_HEAD=""
 
   real_index="$dir/.git/index"
   if [[ -L "$real_index" || ( -e "$real_index" && ! -f "$real_index" ) ]]; then
@@ -309,10 +376,29 @@ _git_commit_history_transaction() {
       _git_history_warn "$dir" "could not initialize git index"
       return 0
     fi
-  elif ! GIT_INDEX_FILE="$index" git -C "$dir" read-tree --empty 2>/dev/null; then
-    rm -f "$index"
-    _git_history_warn "$dir" "could not initialize git index"
-    return 0
+  else
+    # HEAD^{commit} also fails for dangling refs and non-commit objects. Only
+    # a symbolic HEAD whose target ref does not exist is genuinely unborn.
+    if ! head_ref="$(git -C "$dir" symbolic-ref -q HEAD 2>/dev/null)"; then
+      rm -f "$index"
+      _git_history_warn "$dir" "could not resolve current git HEAD"
+      return 0
+    fi
+    if git -C "$dir" show-ref --verify --quiet "$head_ref" 2>/dev/null; then
+      head_ref_status=0
+    else
+      head_ref_status=$?
+    fi
+    if [[ "$head_ref_status" -ne 1 ]]; then
+      rm -f "$index"
+      _git_history_warn "$dir" "could not resolve current git HEAD"
+      return 0
+    fi
+    if ! GIT_INDEX_FILE="$index" git -C "$dir" read-tree --empty 2>/dev/null; then
+      rm -f "$index"
+      _git_history_warn "$dir" "could not initialize git index"
+      return 0
+    fi
   fi
 
   if ! _git_stage_history_paths "$dir" "$index"; then
@@ -400,6 +486,9 @@ _git_commit_history_transaction() {
       fi
       return 0
     fi
+    _GIT_COMMIT_HEAD="$new_commit"
+  elif [[ "$has_head" == true ]]; then
+    _GIT_COMMIT_HEAD="$old_head"
   fi
   rm -f "$backup"
 }
@@ -437,6 +526,7 @@ _git_commit() {
   local dir="$1"
   local msg="${2:-Save}"
   local payload_state="${3:-}"
+  _GIT_COMMIT_HEAD=""
   _assert_profile_path_safe "$dir"
   if [[ ! -e "$dir/.git" && ! -L "$dir/.git" ]]; then
     if ! _git_init "$dir" "$payload_state"; then

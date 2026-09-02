@@ -13,14 +13,24 @@ repo=""
 command_name=""
 previous=""
 has_cached=false
+update_message=""
 for arg in "$@"; do
   if [[ "$previous" == "-C" ]]; then
     repo="$arg"
     previous=""
     continue
   fi
+  if [[ "$previous" == "-m" ]]; then
+    update_message="$arg"
+    previous=""
+    continue
+  fi
   if [[ "$arg" == "-C" ]]; then
     previous="-C"
+    continue
+  fi
+  if [[ "$arg" == "-m" ]]; then
+    previous="-m"
     continue
   fi
   if [[ -z "$command_name" && "$arg" != -* ]]; then
@@ -30,6 +40,25 @@ for arg in "$@"; do
     has_cached=true
   fi
 done
+
+if [[ "$command_name" == "update-ref" &&
+      "$update_message" == "claude-profile history update" &&
+      "${FAIL_RESTORE_COMMIT_PUBLICATION_FOR_TEST:-}" == "true" &&
+      ! -e "$RESTORE_HISTORY_RACE_MARKER_FOR_TEST" ]]; then
+  "$REAL_GIT_FOR_TEST" -C "$repo" update-ref HEAD \
+    "$CONCURRENT_RESTORE_HEAD_FOR_TEST"
+  touch "$RESTORE_HISTORY_RACE_MARKER_FOR_TEST"
+  exec "$REAL_GIT_FOR_TEST" "$@"
+fi
+
+if [[ "$command_name" == "update-ref" &&
+      "$update_message" == "claude-profile restore rollback" &&
+      "${FAIL_RESTORE_REF_ROLLBACK_FOR_TEST:-}" == "true" ]]; then
+  "$REAL_GIT_FOR_TEST" -C "$repo" update-ref HEAD \
+    "$CONCURRENT_RESTORE_HEAD_FOR_TEST"
+  echo "simulated concurrent ref update" >&2
+  exit 94
+fi
 
 if [[ "$command_name" == "rm" && \
       "$has_cached" != true && \
@@ -47,7 +76,8 @@ if [[ "$command_name" == "checkout-index" ]]; then
     echo "simulated rollback checkout-index failure" >&2
     exit 93
   fi
-  if [[ ! -e "$RESTORE_FAILURE_MARKER_FOR_TEST" ]]; then
+  if [[ ! -e "$RESTORE_FAILURE_MARKER_FOR_TEST" &&
+        "${FAIL_RESTORE_APPLY_FOR_TEST:-true}" == "true" ]]; then
     touch "$RESTORE_FAILURE_MARKER_FOR_TEST"
     echo "partially introduced target path" > "$repo/target-only.txt"
     "$REAL_GIT_FOR_TEST" -C "$repo" add -f -- target-only.txt
@@ -505,6 +535,141 @@ EOF
   git -C "$dir" diff --cached --quiet --
 }
 
+@test "restore rolls HEAD back when verification fails after the final commit" {
+  run_cli_ok fork default
+  local dir initial wrapper_dir real_git marker safety_head expected_safety
+  dir="$(profile_dir default)"
+  initial="$(git -C "$dir" rev-parse HEAD)"
+  echo '{"unsaved": true}' > "$CLAUDE_CODE_HOME/settings.json"
+
+  wrapper_dir="$BATS_TEST_TMPDIR/fail-final-restore-verification"
+  marker="$BATS_TEST_TMPDIR/final-restore-commit-published"
+  safety_head="$BATS_TEST_TMPDIR/restore-safety-head"
+  mkdir "$wrapper_dir"
+  real_git="$(command -v git)"
+  cat > "$wrapper_dir/git" <<'EOF'
+#!/usr/bin/env bash
+repo=""
+command_name=""
+previous=""
+has_name_status=false
+for arg in "$@"; do
+  if [[ "$previous" == "-C" ]]; then
+    repo="$arg"
+    previous=""
+    continue
+  fi
+  if [[ "$arg" == "-C" ]]; then
+    previous="-C"
+    continue
+  fi
+  if [[ -z "$command_name" && "$arg" != -* ]]; then
+    command_name="$arg"
+  fi
+  if [[ "$arg" == "--name-status" ]]; then
+    has_name_status=true
+  fi
+done
+
+if [[ "$command_name" == "update-ref" ]]; then
+  "$REAL_GIT_FOR_TEST" "$@" || exit $?
+  subject="$("$REAL_GIT_FOR_TEST" -C "$repo" log -1 --format=%s)"
+  if [[ "$subject" == "Restored to "* ]]; then
+    "$REAL_GIT_FOR_TEST" -C "$repo" rev-parse HEAD^ > \
+      "$RESTORE_SAFETY_HEAD_FOR_TEST"
+    touch "$FINAL_RESTORE_COMMIT_MARKER_FOR_TEST"
+  fi
+  exit 0
+fi
+
+if [[ "$command_name" == "diff" && "$has_name_status" == true &&
+      -e "$FINAL_RESTORE_COMMIT_MARKER_FOR_TEST" ]]; then
+  mv "$FINAL_RESTORE_COMMIT_MARKER_FOR_TEST" \
+    "$FINAL_RESTORE_COMMIT_MARKER_FOR_TEST.used"
+  echo "simulated post-commit verification failure" >&2
+  exit 98
+fi
+
+exec "$REAL_GIT_FOR_TEST" "$@"
+EOF
+  chmod +x "$wrapper_dir/git"
+
+  run env PATH="$wrapper_dir:$PATH" REAL_GIT_FOR_TEST="$real_git" \
+    FINAL_RESTORE_COMMIT_MARKER_FOR_TEST="$marker" \
+    RESTORE_SAFETY_HEAD_FOR_TEST="$safety_head" \
+    /bin/bash "$CLAUDE_PROFILE" restore "$initial"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Could not record restored state"* ]]
+  [[ "$output" == *"restored to its last saved state"* ]]
+  [ -f "$marker.used" ]
+  expected_safety="$(cat "$safety_head")"
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$expected_safety" ]
+  [[ "$(git -C "$dir" log -1 --format=%s)" == "Auto-save before restore to "* ]]
+  grep -q '"unsaved"' "$CLAUDE_CODE_HOME/settings.json"
+  grep -q '"unsaved"' "$dir/settings.json"
+  git -C "$dir" diff --quiet --
+  git -C "$dir" diff --cached --quiet --
+}
+
+@test "restore never rolls back an unrelated HEAD after commit publication loses a race" {
+  run_cli_ok fork default
+  local dir initial current tree unrelated
+  dir="$(profile_dir default)"
+  initial="$(git -C "$dir" rev-parse HEAD)"
+
+  echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "Version 2"
+  current="$(git -C "$dir" rev-parse HEAD)"
+  tree="$(git -C "$dir" rev-parse 'HEAD^{tree}')"
+  unrelated="$(printf '%s\n' "Concurrent history" | \
+    git -C "$dir" commit-tree "$tree" -p "$current")"
+
+  install_partial_restore_failure_git
+  export FAIL_RESTORE_APPLY_FOR_TEST=false
+  export FAIL_RESTORE_COMMIT_PUBLICATION_FOR_TEST=true
+  export CONCURRENT_RESTORE_HEAD_FOR_TEST="$unrelated"
+  export RESTORE_HISTORY_RACE_MARKER_FOR_TEST="$BATS_TEST_TMPDIR/restore-history-race"
+
+  run_cli restore "$initial"
+
+  [ "$status" -ne 0 ]
+  [ -f "$RESTORE_HISTORY_RACE_MARKER_FOR_TEST" ]
+  [[ "$output" == *"Git history changed during restore"* ]]
+  [[ "$output" == *"remains recoverable as commit $current"* ]]
+  [[ "$output" != *"restored to its last saved state"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$unrelated" ]
+  git -C "$dir" cat-file -e "${current}^{commit}"
+  grep -q '"v2"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
+@test "restore rolls back when the final commit fails before publishing HEAD" {
+  run_cli_ok fork default
+  local dir target current
+  dir="$(profile_dir default)"
+
+  ln -s "$BATS_TEST_TMPDIR/missing" "$dir/broken-link"
+  git -C "$dir" add -- broken-link
+  git -C "$dir" commit -q -m "Broken symlink target"
+  target="$(git -C "$dir" rev-parse HEAD)"
+
+  run_cli_ok save -m "Current state"
+  current="$(git -C "$dir" rev-parse HEAD)"
+
+  run_cli restore "$target"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Broken symlink in profile"* ]]
+  [[ "$output" == *"restored to its last saved state"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$current" ]
+  [ ! -e "$dir/broken-link" ]
+  [ ! -L "$dir/broken-link" ]
+  [ ! -e "$CLAUDE_CODE_HOME/broken-link" ]
+  [ ! -L "$CLAUDE_CODE_HOME/broken-link" ]
+  git -C "$dir" diff --quiet --
+  git -C "$dir" diff --cached --quiet --
+}
+
 @test "restore: two-arg form fails on nonexistent profile name" {
   run_cli_ok fork default
   echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
@@ -583,16 +748,44 @@ EOF
   git -C "$dir" diff --cached --quiet --
 }
 
-@test "restore: reports a possibly partial profile when target rollback also fails" {
+@test "restore reports the safety commit when ref rollback loses a CAS race" {
   echo "target version" > "$CLAUDE_CODE_HOME/target-only.txt"
   run_cli_ok fork default
-  local dir initial
+  local dir initial safety
   dir="$(profile_dir default)"
   initial="$(git -C "$dir" rev-parse HEAD)"
 
   rm "$CLAUDE_CODE_HOME/target-only.txt"
   echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
   run_cli_ok save -m "Version 2"
+  safety="$(git -C "$dir" rev-parse HEAD)"
+  install_partial_restore_failure_git
+  export FAIL_RESTORE_REF_ROLLBACK_FOR_TEST=true
+  export CONCURRENT_RESTORE_HEAD_FOR_TEST="$initial"
+
+  run_cli restore "$initial"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"simulated partial target checkout failure"* ]]
+  [[ "$output" == *"simulated concurrent ref update"* ]]
+  [[ "$output" == *"remains recoverable as commit $safety"* ]]
+  [[ "$output" != *"recoverable at HEAD"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$initial" ]
+  git -C "$dir" cat-file -e "${safety}^{commit}"
+  grep -q '"v2"' "$CLAUDE_CODE_HOME/settings.json"
+}
+
+@test "restore: reports a possibly partial profile when target rollback also fails" {
+  echo "target version" > "$CLAUDE_CODE_HOME/target-only.txt"
+  run_cli_ok fork default
+  local dir initial safety
+  dir="$(profile_dir default)"
+  initial="$(git -C "$dir" rev-parse HEAD)"
+
+  rm "$CLAUDE_CODE_HOME/target-only.txt"
+  echo '{"v2": true}' > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok save -m "Version 2"
+  safety="$(git -C "$dir" rev-parse HEAD)"
   install_partial_restore_failure_git
   export FAIL_RESTORE_ROLLBACK_FOR_TEST=true
 
@@ -602,8 +795,9 @@ EOF
   [[ "$output" == *"simulated partial target checkout failure"* ]]
   [[ "$output" == *"simulated rollback checkout-index failure"* ]]
   [[ "$output" == *"may be partially changed"* ]]
-  [[ "$output" == *"recoverable at HEAD"* ]]
+  [[ "$output" == *"remains recoverable as commit $safety"* ]]
   [[ "$output" != *"restored to its last saved state"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$safety" ]
   [ ! -e "$dir/settings.json" ]
   grep -q '"v2"' "$CLAUDE_CODE_HOME/settings.json"
 }
