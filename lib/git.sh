@@ -27,10 +27,9 @@ _git_repo_metadata_is_safe() {
   if [[ -n "$found_link" ]]; then
     return 1
   fi
-  # A linked-worktree commondir is a plain text redirect, not a symlink. It
-  # leaves --absolute-git-dir and --show-toplevel looking local while objects
-  # and refs are read from and written to another repository. Profiles are
-  # always standalone repositories, so any commondir entry is invalid.
+  # A commondir is a plain text redirect, not a symlink: --absolute-git-dir and
+  # --show-toplevel still look local while objects/refs go to another repo.
+  # Profiles are standalone, so any commondir entry is invalid.
   if [[ -e "$git_dir/commondir" || -L "$git_dir/commondir" ]]; then
     return 1
   fi
@@ -168,12 +167,10 @@ _git_stage_history_paths() (
       >/dev/null 2>&1; then
     return 1
   fi
-  # Do not pass `.` alongside excluded roots: an older policy that ignores the
-  # whole projects directory makes Git reject that explicit pathspec before we
-  # can force-add memory. Instead enumerate tracked paths plus non-ignored
-  # untracked paths, filter every mandatory disposable root ourselves, and
-  # stage literal leaf paths in bounded batches. Tracked deletions remain in
-  # `--cached` and are therefore staged exactly too.
+  # Never pass `.` here: an older policy ignoring all of projects makes Git
+  # reject that pathspec before memory can be force-added. Enumerate tracked
+  # plus non-ignored untracked paths, filter the disposable roots ourselves, and
+  # stage literal leaves in batches; `ls-files --cached` keeps deletions exact.
   local ordinary_paths_file ordinary_path ordinary_pathspec ordinary_path_bytes
   local ordinary_batch_bytes=0
   local -a ordinary_paths=()
@@ -223,11 +220,9 @@ _git_stage_history_paths() (
   if [[ ! -L "$dir/agent-memory" && -e "$dir/agent-memory" ]]; then
     memory_paths+=(":(top,literal)agent-memory")
   fi
-  # Include dot-prefixed project keys as well as Claude Code's usual encoded
-  # names. The literal pathspec magic prevents brackets, wildcards, colons,
-  # and other user-controlled characters from matching sibling paths. Skip a
-  # stale symlink ancestor rather than asking Git for a path beyond a symlink;
-  # mutating saves repair such links before reaching this helper.
+  # The globs also cover dot-prefixed project keys. Literal pathspec magic keeps
+  # user-controlled brackets, wildcards and colons from matching sibling paths.
+  # Skip symlinked ancestors — mutating saves repair such links beforehand.
   if [[ ! -L "$dir/projects" ]]; then
     for memory_dir in \
         "$dir"/projects/*/memory \
@@ -292,11 +287,9 @@ _diff_git_status() (
   if ! mkdir -p "$objects/info"; then
     return 1
   fi
-  # GIT_ALTERNATE_OBJECT_DIRECTORIES is colon-delimited, so an alternates file
-  # is both safer and compatible with ':' in the store path. Its normal format
-  # accepts the absolute path directly and works on filesystems without
-  # symlinks. Only a literal newline needs indirection because the file is
-  # line-delimited; a fixed relative entry points at a scratch symlink then.
+  # GIT_ALTERNATE_OBJECT_DIRECTORIES is colon-delimited; an alternates file
+  # takes the absolute path directly — safe with ':' in the store path, no
+  # symlink needed. Being line-delimited, only a newline needs the detour below.
   if [[ "$real_objects" == *$'\n'* ]]; then
     if ! ln -s "$real_objects" "$objects/alternate" ||
        ! printf 'alternate\n' > "$objects/info/alternates"; then
@@ -423,10 +416,8 @@ _git_commit_history_transaction() {
     if [[ "$has_head" == true ]]; then
       commit_tree_args+=(-p "$old_head")
     fi
-    # `git commit-tree` deliberately separates object creation from ref
-    # publication. Preserve the repository's commit-signing requirement so a
-    # configured-but-unavailable signer still aborts history exactly as
-    # `git commit` did.
+    # Preserve the repo's commit-signing requirement so a configured but
+    # unavailable signer still aborts history, like `git commit`.
     if [[ "$(git -C "$dir" config --bool --get commit.gpgsign 2>/dev/null || true)" == true ]]; then
       commit_tree_args+=(-S)
     fi
@@ -548,7 +539,6 @@ _git_commit() {
   _git_commit_history_transaction "$dir" "$msg"
 }
 
-# Resolve a ref (commit hash or date string) to a commit hash.
 _git_resolve_ref() {
   local dir="$1" ref="$2"
   local resolved="" date_ref="$ref"

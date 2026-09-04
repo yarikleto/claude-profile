@@ -227,8 +227,6 @@ cmd_restore() {
   short="$(git -C "$profile_dir" log --format='%h %s' -1 "$resolved" --)"
   info "Restoring $(_pname "$name") to: ${YELLOW}$short${NC}"
 
-  # Auto-save unsaved live changes if this is the active profile; for a
-  # non-active profile, commit any stray working-tree edits the same way
   if [[ "$(get_current)" == "$name" ]]; then
     _save_current_to "$profile_dir" "Auto-save before restore to $ref"
   else
@@ -332,7 +330,6 @@ cmd_restore() {
     exit 1
   fi
 
-  # If active, reload into live locations
   if [[ "$(get_current)" == "$name" ]]; then
     info "Reloading active profile..."
     _set_op_marker "use $name"

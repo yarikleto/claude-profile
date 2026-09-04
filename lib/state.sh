@@ -16,10 +16,8 @@ get_current() {
   fi
 }
 
-# Like get_current, but validates the stored name and exits with a clear error
-# if it fails validation (e.g. path traversal planted by an attacker or
-# filesystem corruption). Only call this when the result will be used in a
-# path — comparisons and empty-checks don't need it.
+# Like get_current, but exits with a clear error if the stored name is invalid
+# (path traversal, corruption). Only needed when the result becomes a path.
 get_current_validated() {
   local name
   name="$(get_current)"
@@ -40,7 +38,6 @@ get_current_validated() {
 set_current() { echo "$1" > "$CURRENT_FILE"; }
 clear_current() { rm -f "$CURRENT_FILE"; }
 
-# ─── Exclusive lock for mutating commands ───────────────────
 # Concurrent invocations interleave rm/mv on the same live files; with --move
 # semantics that can destroy the sole copy of a profile's data.
 
@@ -104,11 +101,9 @@ _cleanup_stale_lock_temps() {
   return 0
 }
 
-# Return the pid of a live process that is between creating the lock directory
-# and atomically publishing its pid into it. The pid temp exists before mkdir;
-# renaming it into the lock has no instant where neither path exists. This
-# closes the otherwise unavoidable mkdir-to-pid window without relying on a
-# hard link (which is unavailable on filesystems such as exFAT).
+# Pid of a live process between creating the lock directory and publishing its
+# pid into it. The pid temp exists before mkdir and is renamed in, so no instant
+# has neither path — closing that window without hard links (absent on exFAT).
 _pending_lock_owner_pid() {
   local pending pid
   for pending in "$PROFILES_DIR"/.lock-pid.*; do
@@ -237,7 +232,6 @@ _acquire_lock() {
       return 0
     fi
 
-    # Lock exists — is its owner still alive?
     local pid
     pid="$(cat "$lock/pid" 2>/dev/null || true)"
     if [[ -z "$pid" ]]; then
@@ -262,12 +256,10 @@ _acquire_lock() {
       exit 1
     fi
 
-    # Stale lock from a dead owner. Claim the takeover atomically: rename the
-    # exact stale directory aside. `rename` on a single source succeeds for
-    # only one racer, so two contenders can't both clear the same lock and
-    # proceed. If our rename lost (another racer already took over, or the
-    # owner revived and the lock is now a live one), fall through to retry —
-    # the next mkdir fails and the liveness check reports "in progress".
+    # Stale lock from a dead owner. Rename the exact stale dir aside: `rename`
+    # of one source succeeds for a single racer, so two contenders can't both
+    # clear it. A lost rename (a racer took over, or the owner revived) falls
+    # through to retry — the next mkdir fails and the check reports "in progress".
     local stash="$lock.stale.$$.$attempt"
     if mv "$lock" "$stash" 2>/dev/null; then
       # Guard the exotic case where we grabbed a *fresh* lock from a racer that
@@ -281,26 +273,19 @@ _acquire_lock() {
       fi
       rm -rf "$stash"
     fi
-    # loop and retry mkdir
   done
 
   err "Another claude-profile operation is in progress"
   exit 1
 }
 
-# ─── Interrupted-operation marker ────────────────────────────
-# Bracket the destructive phase of use/new/restore/deactivate. The marker
-# records the operation, its PHASE, and the source/target profiles so a crash
-# is recovered by sweeping the half-moved live state back to the RIGHT profile:
-#   phase=saving   — crashed during the outgoing --move; live holds a partial
-#                    copy of SOURCE, so recovery sweeps it back to source.
-#   phase=loading  — crashed during the incoming load; live holds a partial
-#                    copy of TARGET, so recovery sweeps it back to target.
-#   phase=restore  — deactivate crashed mid-restore; live holds a partial copy
-#                    of the backup (handled by deactivate itself).
-# Written as key=value lines. The old single-line forms ("use X",
-# "deactivate") are still parsed so a marker left by an older binary recovers
-# instead of crashing.
+# Bracket the destructive phase of use/new/restore/deactivate. Records op, phase,
+# source and target so a crash sweeps half-moved live state back to the RIGHT one:
+#   saving  — died in the outgoing --move; live is a partial SOURCE, sweep there
+#   loading — died in the incoming load; live is a partial TARGET, sweep there
+#   restore — deactivate died mid-restore; live is a partial backup it recovers
+# key=value lines; the old single-line forms ("use X", "deactivate") still parse
+# so a marker from an older binary recovers instead of crashing.
 
 _mark_op() {
   local op="$1" phase="$2" source="$3" target="$4"
@@ -383,10 +368,8 @@ _refuse_if_op_interrupted() {
   exit 1
 }
 
-# Back up original ~/.claude/ state once, before first use.
-# The backup is never modified — it's the "main branch".
-# The snapshot lands in a temp dir first: a snapshot that dies partway must
-# never leave a half-written directory that later runs accept as the backup.
+# The backup is never modified — it's the "main branch". Snapshot into a temp
+# dir first: a half-written directory must never be accepted as the backup.
 _backup_raw_state() {
   local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
   if [[ -d "$backup_dir" ]]; then
@@ -410,26 +393,20 @@ _ensure_seed_dir() {
   done
 }
 
-# ─── Store format migration ─────────────────────────────────
-# Bring an existing store up to the current on-disk format. Idempotent: a
-# format stamp records the last-applied version so this runs once per upgrade.
-#
-# Format 2: the home-level ~/.claude.json moved from a profile's root
-# ".claude.json" (which collided with a live file of the same name) to the
-# reserved CLAUDE_HOME_JSON name. The load path also tolerates the old layout,
-# so a store that misses this migration still loads correctly.
-#
+# Bring an existing store up to the current on-disk format. Idempotent: a format
+# stamp records the last-applied version, so each migration runs once.
+# Format 2: the home ~/.claude.json moved from a profile's root ".claude.json"
+# (which collided with a live file of that name) to the reserved CLAUDE_HOME_JSON
+# name; the load path still tolerates the old layout.
 # Format 3: refresh each profile's tool-owned .gitignore so durable memory is
-# visible to Git. This deliberately does NOT commit: the active profile may be
-# moved-thin (its tracked payload is live in ~/.claude), and `git add -A` there
-# would record false mass deletions. The next real save/auto-save fills the
-# profile first and commits memory as a trustworthy baseline.
+# visible to Git. Never commits: an active profile may be moved-thin (payload
+# live in ~/.claude), where `git add -A` records false mass deletions; the next
+# save/auto-save fills it first and commits a real baseline.
 _migrate_profile_to_format2() {
   local dir="$1"
   if [[ -e "$dir/.claude.json" && ! -d "$dir/.claude.json" && ! -e "$dir/$CLAUDE_HOME_JSON" ]]; then
     mv "$dir/.claude.json" "$dir/$CLAUDE_HOME_JSON" 2>/dev/null || return 1
-    # Do not commit during startup migration: the active repo may be
-    # moved-thin. Its next normal save safely records the rename.
+    # No commit here (repo may be moved-thin); the next save records the rename.
   fi
 }
 
@@ -484,9 +461,8 @@ _migrate_store_format() {
     return 0
   fi
 
-  # A switch/deactivate can leave both live and stored trees partial. Let its
-  # recovery path finish before touching profile metadata; the next invocation
-  # retries because the old format stamp is intentionally left in place.
+  # A switch/deactivate can leave live and stored trees partial. Let its recovery
+  # run first; the old stamp is deliberately kept so the next invocation retries.
   if [[ -e "$OP_MARKER_FILE" ]]; then
     return 1
   fi
@@ -534,16 +510,13 @@ _ensure_original_backup() {
   ensure_dir
   _backup_raw_state
   _ensure_seed_dir
-  # A store created during this invocation did not exist when startup
-  # migration ran. Stamp its current layout so the next command never treats
-  # a new backup/profile as a legacy one.
+  # A store created during this invocation post-dates startup migration. Stamp
+  # its layout so the next command never treats a new profile/backup as legacy.
   if [[ "$STORE_EXISTED_AT_STARTUP" != true && ! -e "$STORE_FORMAT_FILE" ]]; then
     _write_store_format
   fi
 }
 
-# Validate that a profile name is safe (whitelist approach).
-# Allowed: [a-zA-Z0-9._-], must not start with dot or dash.
 _validate_profile_name() {
   local name="$1"
   if [[ "$name" =~ [^a-zA-Z0-9._-] || "$name" == ..* || "$name" == .* || "$name" == -* ]]; then
@@ -552,7 +525,6 @@ _validate_profile_name() {
   fi
 }
 
-# Require a profile name, exit with error if empty.
 _require_profile_name() {
   local name="$1" usage="$2"
   if [[ -z "$name" ]]; then
@@ -562,7 +534,6 @@ _require_profile_name() {
   _validate_profile_name "$name"
 }
 
-# Require a profile directory to exist, exit with error if not.
 _require_profile_exists() {
   local name="$1"
   local profile_dir="$PROFILES_DIR/$name"

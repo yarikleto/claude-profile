@@ -15,7 +15,6 @@ unset VERSION_FILE
 
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 
-# Storage location: CLAUDE_PROFILE_HOME > XDG_DATA_HOME/claude-profile > ~/.local/share/claude-profile
 if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
   PROFILES_DIR="$CLAUDE_PROFILE_HOME"
 elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
@@ -51,11 +50,9 @@ _canonical_path() {
   fi
 }
 
-# Refuse pathological nesting — the switch logic clears/copies whole
-# directories, so a store inside the live dir (or the reverse) would let those
-# loops destroy the store itself, including the original backup. Compare
-# CANONICAL paths so a trailing slash, `..`, a relative spelling, or a symlink
-# alias can't smuggle the store inside the live dir past a raw string compare.
+# Refuse nesting: the switch loops clear/copy whole directories, so a store
+# inside the live dir (or the reverse) would destroy the store and the original
+# backup. Compare _canonical_path output — a raw string compare misses aliases.
 _CANON_PROFILES_DIR="$(_canonical_path "$PROFILES_DIR")"
 _CANON_CLAUDE_DIR="$(_canonical_path "$CLAUDE_DIR")"
 if [[ "$_CANON_PROFILES_DIR" == "$_CANON_CLAUDE_DIR" || "$_CANON_PROFILES_DIR" == "$_CANON_CLAUDE_DIR"/* ]]; then
@@ -81,12 +78,10 @@ if [[ -d "$PROFILES_DIR" ]]; then
   STORE_EXISTED_AT_STARTUP=true
 fi
 
-# The home-level ~/.claude.json is stored inside a profile under this reserved
-# name, keeping it in a namespace disjoint from the live payload — a live file
-# literally named ~/.claude/.claude.json is captured as the payload entry
-# ".claude.json" and no longer collides with (or is overwritten by) the home
-# file. Profiles written before format 2 kept the home file at the root as
-# ".claude.json"; startup migration moves it here.
+# ~/.claude.json (home level) is stored in a profile under this reserved name,
+# in a namespace disjoint from the live payload: a live ~/.claude/.claude.json
+# is captured as the payload entry ".claude.json" without colliding with the
+# home file. Pre-format-2 profiles kept it at the root; migration moves it here.
 CLAUDE_HOME_JSON=".claude-profile-home.json"
 
 # Seed files for new (empty) profiles so Claude Code doesn't complain.

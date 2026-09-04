@@ -22,7 +22,6 @@ _claude-profile() {
   )
 
   _claude_profile_profiles() {
-    # Resolve profiles dir: CLAUDE_PROFILE_HOME > XDG_DATA_HOME > default
     local profiles_dir
     if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
       profiles_dir="$CLAUDE_PROFILE_HOME"

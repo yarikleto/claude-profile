@@ -4,7 +4,6 @@ load test_helper
 # ─── Symlinked user files are preserved ──────────────────
 
 @test "fork: captures symlinked settings.json content" {
-  # User symlinks settings.json to an external file (e.g. dotfiles repo)
   local external="$BATS_TEST_TMPDIR/dotfiles/claude-settings.json"
   mkdir -p "$(dirname "$external")"
   echo '{"from": "dotfiles"}' > "$external"
@@ -14,7 +13,6 @@ load test_helper
 
   run_cli_ok fork myprofile
 
-  # Profile should have the actual content, not a symlink
   local saved="$(profile_dir myprofile)/settings.json"
   [ -f "$saved" ]
   [ ! -L "$saved" ]
@@ -41,7 +39,6 @@ load test_helper
 }
 
 @test "deactivate: restores backup even when original was symlinked" {
-  # Simulate: user originally had a symlinked .claude.json
   local external="$BATS_TEST_TMPDIR/external-mcp.json"
   echo '{"mcpServers": {"original": true}}' > "$external"
   rm "$HOME/.claude.json"
@@ -50,12 +47,10 @@ load test_helper
   run_cli_ok fork first
   run_cli_ok use first
 
-  # Modify live state
   echo '{"mcpServers": {"modified": true}}' > "$HOME/.claude.json"
 
   run_cli_ok deactivate
 
-  # Original content should be restored (as regular file, not symlink)
   [ -f "$HOME/.claude.json" ]
   grep -q '"original"' "$HOME/.claude.json"
 }
@@ -67,7 +62,6 @@ load test_helper
   run_cli_ok fork beta
   run_cli_ok use alpha
 
-  # Make changes to every kind of managed item
   echo '{"alpha_settings": true}' > "$CLAUDE_CODE_HOME/settings.json"
   echo "# Alpha CLAUDE.md" > "$CLAUDE_CODE_HOME/CLAUDE.md"
   mkdir -p "$CLAUDE_CODE_HOME/agents"
@@ -75,10 +69,8 @@ load test_helper
   echo '{"alpha": "keys"}' > "$CLAUDE_CODE_HOME/keybindings.json"
   echo '{"mcpServers": {"alpha": true}}' > "$HOME/.claude.json"
 
-  # Switch away
   run_cli_ok use beta
 
-  # All alpha changes should be saved in the profile
   local alpha_dir
   alpha_dir="$(profile_dir alpha)"
   grep -q '"alpha_settings"' "$alpha_dir/settings.json"
@@ -100,7 +92,6 @@ load test_helper
   run_cli_ok use profile2
   echo '{"profile2": true}' > "$CLAUDE_CODE_HOME/settings.json"
 
-  # Switch back to profile1
   run_cli_ok use profile1
 
   grep -q '"profile1"' "$CLAUDE_CODE_HOME/settings.json"
@@ -119,7 +110,6 @@ load test_helper
   echo '{"mcpServers": {"server-b": {"url": "http://b"}}}' > "$HOME/.claude.json"
   run_cli_ok save -m "mcp2 servers"
 
-  # Switch back — mcp1's config should be restored
   run_cli_ok use mcp1
   grep -q "server-a" "$HOME/.claude.json"
   ! grep -q "server-b" "$HOME/.claude.json"
@@ -147,7 +137,6 @@ load test_helper
   [[ "$output" == *"fork"* ]]
   [[ "$output" == *"--force"* ]]
 
-  # Live state must be completely untouched
   [ -f "$CLAUDE_CODE_HOME/skills/precious/SKILL.md" ]
   grep -q "irreplaceable" "$CLAUDE_CODE_HOME/skills/precious/SKILL.md"
   grep -q "precious-server" "$HOME/.claude.json"
@@ -337,7 +326,6 @@ load test_helper
 # ─── Directory contents preserved through cycles ─────────
 
 @test "skills directory contents survive fork-use-save-switch-use cycle" {
-  # Start with realistic skills
   mkdir -p "$CLAUDE_CODE_HOME/skills/my-skill"
   echo "---" > "$CLAUDE_CODE_HOME/skills/my-skill/SKILL.md"
   echo "skill content" >> "$CLAUDE_CODE_HOME/skills/my-skill/SKILL.md"
@@ -347,17 +335,14 @@ load test_helper
   run_cli_ok fork with-skills
   run_cli_ok use with-skills
 
-  # Add a new skill while active
   mkdir -p "$CLAUDE_CODE_HOME/skills/new-skill"
   echo "brand new" > "$CLAUDE_CODE_HOME/skills/new-skill/SKILL.md"
   run_cli_ok save -m "added new skill"
 
-  # Switch away and back
   run_cli_ok fork empty
   run_cli_ok use empty
   run_cli_ok use with-skills
 
-  # All 3 skills should be present
   [ -f "$CLAUDE_CODE_HOME/skills/my-skill/SKILL.md" ]
   [ -f "$CLAUDE_CODE_HOME/skills/another-skill/SKILL.md" ]
   [ -f "$CLAUDE_CODE_HOME/skills/new-skill/SKILL.md" ]
@@ -377,7 +362,6 @@ load test_helper
   # Agents should be gone in the clean (new) profile
   [ ! -f "$CLAUDE_CODE_HOME/agents/my-agent.md" ]
 
-  # Switch back — agents should return
   run_cli_ok use with-agents
   [ -f "$CLAUDE_CODE_HOME/agents/my-agent.md" ]
   grep -q "agent config" "$CLAUDE_CODE_HOME/agents/my-agent.md"
@@ -386,7 +370,6 @@ load test_helper
 # ─── Original backup is never modified ───────────────────
 
 @test "original backup is never modified after creation" {
-  # Capture initial state
   local original_settings
   original_settings="$(cat "$CLAUDE_CODE_HOME/settings.json")"
   local original_mcp
@@ -395,7 +378,6 @@ load test_helper
   run_cli_ok fork first
   run_cli_ok use first
 
-  # Modify everything
   echo '{"completely": "different"}' > "$CLAUDE_CODE_HOME/settings.json"
   echo '{"mcpServers": {"new": true}}' > "$HOME/.claude.json"
   run_cli_ok save -m "changed everything"
@@ -404,7 +386,6 @@ load test_helper
   run_cli_ok use second
   echo '{"second": true}' > "$CLAUDE_CODE_HOME/settings.json"
 
-  # Backup should still have the original content
   local backup
   backup="$(backup_dir)"
   [ -d "$backup" ]
@@ -426,14 +407,11 @@ load test_helper
 
   echo '{"my": "data"}' > "$CLAUDE_CODE_HOME/settings.json"
 
-  # Try to switch to nonexistent — should fail
   run_cli use nonexistent
   [ "$status" -ne 0 ]
 
-  # Current state should be untouched
   grep -q '"my": "data"' "$CLAUDE_CODE_HOME/settings.json"
 
-  # Still on the same profile
   run_cli_ok current
   [[ "$output" == *"safe"* ]]
 }
@@ -447,11 +425,9 @@ load test_helper
   run_cli_ok use original
   echo '{"modified": true}' > "$CLAUDE_CODE_HOME/settings.json"
 
-  # Try to fork with same name — should fail
   run_cli fork original
   [ "$status" -ne 0 ]
 
-  # Saved profile data should be intact (should have the saved version)
   local profile_settings
   profile_settings="$(profile_dir original)/settings.json"
   [ -f "$profile_settings" ]
@@ -465,7 +441,6 @@ load test_helper
   run_cli delete -f protected
   [ "$status" -ne 0 ]
 
-  # Profile and live data should be intact
   [ -d "$(profile_dir protected)" ]
   grep -q '"important"' "$CLAUDE_CODE_HOME/settings.json"
 }
@@ -473,7 +448,6 @@ load test_helper
 # ─── Edge cases with file content ─────────────────────────
 
 @test "binary-like content in settings survives round-trip" {
-  # Settings with special characters, unicode, escapes
   cat > "$CLAUDE_CODE_HOME/settings.json" <<'JSON'
 {
   "prompt": "Use emoji: \ud83d\ude00",
@@ -489,7 +463,6 @@ JSON
   run_cli_ok use other
   run_cli_ok use special-chars
 
-  # Content should be byte-identical
   grep -q 'emoji' "$CLAUDE_CODE_HOME/settings.json"
   grep -q 'C:\\\\Users' "$CLAUDE_CODE_HOME/settings.json"
 }
@@ -497,7 +470,6 @@ JSON
 @test "empty managed directories are preserved" {
   mkdir -p "$CLAUDE_CODE_HOME/agents"
   mkdir -p "$CLAUDE_CODE_HOME/rules"
-  # agents/ and rules/ exist but are empty
 
   run_cli_ok fork with-empty-dirs
   run_cli_ok use with-empty-dirs
@@ -589,7 +561,6 @@ JSON
   run_cli_ok use source
   echo '{"important": "data"}' > "$CLAUDE_CODE_HOME/settings.json"
 
-  # Now make target profile's skills dir unreadable
   mkdir -p "$(profile_dir target)/skills/locked-skill"
   echo "data" > "$(profile_dir target)/skills/locked-skill/SKILL.md"
   chmod 000 "$(profile_dir target)/skills/locked-skill"
@@ -597,7 +568,6 @@ JSON
   run_cli use target
   # Live settings should still have source's content (switch should be aborted)
   grep -q '"important"' "$CLAUDE_CODE_HOME/settings.json"
-  # Skills from test setup should still be present
   [ -d "$CLAUDE_CODE_HOME/skills" ]
 
   chmod 755 "$(profile_dir target)/skills/locked-skill" 2>/dev/null || true
@@ -619,7 +589,6 @@ JSON
   local target_file="$BATS_TEST_TMPDIR/external-content"
   echo "external data" > "$target_file"
 
-  # Plant a symlink in the profile directory
   rm -f "$(profile_dir legit)/settings.json"
   ln -s "$target_file" "$(profile_dir legit)/settings.json"
 
@@ -627,10 +596,8 @@ JSON
   run_cli_ok use legit
   [[ "$output" == *"Repaired"* ]]
 
-  # Profile symlink should now be a regular file
   [ ! -L "$(profile_dir legit)/settings.json" ]
 
-  # Live settings must be a regular file with the dereferenced content
   [ -f "$CLAUDE_CODE_HOME/settings.json" ]
   [ ! -L "$CLAUDE_CODE_HOME/settings.json" ]
   grep -q "external data" "$CLAUDE_CODE_HOME/settings.json"
@@ -644,7 +611,6 @@ JSON
   mkdir -p "$ext_dir"
   echo "agent content" > "$ext_dir/payload.md"
 
-  # Replace agents dir with a symlink in the profile
   rm -rf "$(profile_dir safe-profile)/agents"
   ln -s "$ext_dir" "$(profile_dir safe-profile)/agents"
 
@@ -652,7 +618,6 @@ JSON
   run_cli_ok use safe-profile
   [[ "$output" == *"Repaired"* ]]
 
-  # Live agents should be a regular directory with the content (not a symlink)
   [ -d "$CLAUDE_CODE_HOME/agents" ]
   [ ! -L "$CLAUDE_CODE_HOME/agents" ]
   grep -q "agent content" "$CLAUDE_CODE_HOME/agents/payload.md"

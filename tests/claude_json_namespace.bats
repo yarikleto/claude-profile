@@ -13,7 +13,6 @@ load test_helper
   run_cli_ok new p2
   run_cli_ok use p1
 
-  # Both files come back intact and distinct
   grep -q '"home":"OUTER"' "$HOME/.claude.json"
   grep -q '"inner":"INNER"' "$CLAUDE_CODE_HOME/.claude.json"
 }
@@ -35,7 +34,6 @@ load test_helper
   echo '{"inner":"INNER"}' > "$CLAUDE_CODE_HOME/.claude.json"
   run_cli_ok fork p1
 
-  # The two files are stored under different paths (no collision)
   run bash -c "grep -rl 'OUTER' '$(profile_dir p1)'"
   local home_path="$output"
   run bash -c "grep -rl 'INNER' '$(profile_dir p1)'"

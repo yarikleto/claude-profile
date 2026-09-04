@@ -15,7 +15,6 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ─── Load modules ──────────────────────────────────────────
 source "$SCRIPT_DIR/lib/output.sh"
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/profile_safety.sh"
@@ -28,15 +27,12 @@ source "$SCRIPT_DIR/commands/info.sh"
 source "$SCRIPT_DIR/commands/history.sh"
 source "$SCRIPT_DIR/commands/ui.sh"
 
-# ─── Dispatch ──────────────────────────────────────────────
 cmd="${1:-help}"
 shift 2>/dev/null || true
 
-# Mutating commands take an exclusive lock — concurrent invocations interleave
-# rm/mv on the same live files and can destroy the sole copy of moved data.
-# statusline is included: `statusline install` writes both the store and live
-# settings.json, so it can race a switch without the lock. Locking its bare
-# usage path too is harmless.
+# Mutating commands take an exclusive lock — see lib/state.sh (_acquire_lock).
+# statusline is included: `statusline install` writes both store and live
+# settings.json, so it can race a switch; locking its usage path too is harmless.
 command_mutates=false
 case "$cmd" in
   new|fork|use|switch|save|deactivate|off|edit|delete|rm|restore|statusline)
@@ -44,13 +40,10 @@ case "$cmd" in
     ;;
 esac
 
-# Bring an existing store up to the current on-disk format before commands
-# that change it. Mandatory writers claim the lock first, then migrate: this
-# also stamps a brand-new store created by the lock itself. Read-only commands
-# retain eager migration when the store is idle, but a one-shot failed claim is
-# silently skipped so list/history/help remain available during a live write.
-# Release an optional migration lock before dispatch — a pager or a large diff
-# must never block subsequent profile mutations.
+# Format-migrate the store before dispatch — see _migrate_store_format in
+# lib/state.sh. Writers lock first, then migrate, so a store the lock itself
+# created is stamped too. Read-only commands migrate only on a free lock (so
+# list/history stay usable mid-write) and release it, or a pager blocks writes.
 if [[ "$command_mutates" == true ]]; then
   _acquire_lock
   if _store_needs_migration; then

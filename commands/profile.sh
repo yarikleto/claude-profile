@@ -1,12 +1,10 @@
 # profile.sh — Core profile operations: new, fork, use, save, deactivate
 
-# Recover a switch that died mid-flight. The marker's PHASE says which side the
-# half-moved live state belongs to: during the outgoing save (saving) live is a
-# partial copy of the SOURCE, during the incoming load (loading) it is a partial
-# copy of the TARGET. Sweep it back to that side with a non-destructive move —
-# never the exact-sync save, which would delete a profile's sole copy. After a
-# saving-phase sweep live is empty and .current still names the source, so the
-# re-driven command's auto-save no-ops instead of propagating deletions.
+# Recover a switch that died mid-flight. Sweep the half-moved live state back
+# to the side PHASE names (see _mark_op in lib/state.sh) with a non-destructive
+# move — the exact-sync save would delete a profile's sole copy. After a saving
+# sweep live is empty and .current still names the source, so the re-driven
+# auto-save no-ops instead of propagating deletions.
 _recover_interrupted_switch() {
   _parse_op_marker || return 0
   if [[ "$_OP" != "use" ]]; then
@@ -96,14 +94,12 @@ cmd_new() {
     err "Profile '$(_pname "$name")' already exists"; exit 1
   fi
 
-  # Auto-save current profile before switching
   local current
   current="$(get_current_validated)"
   _guard_detached_live_state "$current" "$force" "$backup_preexisted"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
-    # Mark the saving phase BEFORE the first destructive move — a crash here
-    # recovers by sweeping the half-moved live state back to the source.
+    # Saving phase marker BEFORE the first destructive move (see cmd_use).
     _mark_op use saving "$current" "$name"
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before new '$name'" --move
   fi
@@ -142,14 +138,12 @@ cmd_fork() {
   local current
   current="$(get_current_validated)"
 
-  # Auto-save current profile before switching
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving profile $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before fork '$name'"
   fi
-  # Note: fork uses _snapshot_current (cp), not --move, because it
-  # copies the current live state into the new profile. The live state
-  # is preserved since the new profile IS the current state.
+  # fork copies (_snapshot_current), never --move: the new profile IS the
+  # current live state, which has to stay in place.
 
   if [[ -n "$current" ]]; then
     info "Forking from $(_pname "$current")..."
@@ -208,8 +202,7 @@ cmd_use() {
     return
   fi
 
-  # Capture before _ensure_original_backup — a pre-existing backup does NOT
-  # cover config created later, so it can't justify wiping the live state.
+  # Capture before _ensure_original_backup (see cmd_new).
   local backup_preexisted=false
   if [[ -d "$PROFILES_DIR/.pre-profiles-backup" ]]; then
     backup_preexisted=true
@@ -221,9 +214,8 @@ cmd_use() {
   # Pre-validate target profile before any destructive operations
   _validate_profile_for_load "$profile_dir" || exit 1
 
-  # Auto-save current profile before switching. Mark the saving phase BEFORE
-  # the first destructive move so a crash mid-save recovers by sweeping the
-  # half-moved live state back to the source — never exact-sync-deleting it.
+  # Mark the saving phase BEFORE the first destructive move: a crash mid-save
+  # then sweeps live back to the source instead of exact-sync-deleting it.
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving $(_pname "$current")..."
     _mark_op use saving "$current" "$name"
@@ -328,13 +320,11 @@ cmd_deactivate() {
     esac
   done
 
-  # A deactivate that died mid-flight is recovered here. Any other interrupted
-  # operation must be recovered by its own command first.
-  #   phase=saving  — died during the outgoing --move; sweep the half-moved live
-  #                   state back to the source so its sole copy isn't lost, then
-  #                   fall through to a fresh deactivate (live is empty after).
-  #   phase=restore — died mid-restore; live holds a partial backup copy (not
-  #                   user data), so re-run the restore and skip the auto-save.
+  # A deactivate that died mid-flight is recovered here; any other interrupted
+  # op must be recovered by its own command first. Phases: see _mark_op in
+  # lib/state.sh. saving — sweep the half-moved live state back to the source,
+  # its sole copy; live is empty after, so fall through to a fresh deactivate.
+  # restore — re-run the restore and skip the auto-save.
   local resume_restore=false
   _parse_op_marker || true
   if [[ -n "$_OP" ]]; then
@@ -372,7 +362,6 @@ cmd_deactivate() {
     ok "Detached from $(_pname "$current") — current config kept as-is"
     info "You can safely remove ${BOLD}$PROFILES_DIR${NC} when ready"
   else
-    # Verify backup exists before doing destructive save
     if [[ ! -d "$backup_dir" ]]; then
       if [[ -n "$current" ]]; then
         err "Original backup not found — refusing to restore (would destroy live files)"

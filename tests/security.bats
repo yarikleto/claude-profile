@@ -127,10 +127,8 @@ load test_helper
 
   local stored
   stored="$(profile_dir nesttest)/plugins/cache/linked.md"
-  # Content should be captured
   [ -f "$stored" ]
   grep -q "LINKED CONTENT" "$stored"
-  # But stored as regular file, not a symlink
   [ ! -L "$stored" ]
 }
 
@@ -194,18 +192,14 @@ EOF
   local secret="$BATS_TEST_TMPDIR/secret"
   echo "TOP SECRET" > "$secret"
 
-  # Replace a file in the profile with a symlink
   rm "$(profile_dir symusetest)/settings.json"
   ln -s "$secret" "$(profile_dir symusetest)/settings.json"
 
-  # Should succeed — symlink is auto-repaired
   run_cli_ok use symusetest
   [[ "$output" == *"Repaired"* ]]
 
-  # The profile's symlink should now be a regular file
   [ ! -L "$(profile_dir symusetest)/settings.json" ]
 
-  # Live file should contain the content
   grep -q "TOP SECRET" "$CLAUDE_CODE_HOME/settings.json"
 }
 
@@ -221,11 +215,9 @@ EOF
   git -C "$(profile_dir symlinked)" \
     -c user.name=test -c user.email=test@test commit -q -m "init"
 
-  # Should succeed — nested symlink is auto-repaired
   run_cli_ok use symlinked
   [[ "$output" == *"Repaired"* ]]
 
-  # The repaired file should be loaded as regular file, not symlink
   [ ! -L "$CLAUDE_CODE_HOME/skills/outside" ]
   grep -q "TOP SECRET" "$CLAUDE_CODE_HOME/skills/outside"
 }
@@ -234,7 +226,6 @@ EOF
   run_cli_ok fork brokenlink
   run_cli_ok fork other
 
-  # Create a symlink to a nonexistent target
   ln -s "/nonexistent/path/file.txt" "$(profile_dir brokenlink)/bad"
 
   run_cli use brokenlink

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Uninstall claude-profile
 set -euo pipefail
 
 INSTALL_DIR="${CLAUDE_PROFILE_INSTALL_DIR:-$HOME/.local/bin}"
@@ -72,19 +71,16 @@ clear_zsh_completion_cache() {
   fi
 }
 
-# Remove binary
 if [[ -f "$INSTALL_DIR/claude-profile" ]]; then
   rm "$INSTALL_DIR/claude-profile"
   ok "Removed $INSTALL_DIR/claude-profile"
 fi
 
-# Remove lib modules
 if [[ -d "$INSTALL_LIB" ]]; then
   rm -rf "$INSTALL_LIB"
   ok "Removed $INSTALL_LIB"
 fi
 
-# Remove completions
 COMPLETIONS_DIR="${CLAUDE_PROFILE_COMPLETIONS_DIR:-}"
 OH_MY_ZSH_CUSTOM="$(detect_oh_my_zsh_custom_dir)"
 for f in \
@@ -102,7 +98,6 @@ for f in \
 done
 clear_zsh_completion_cache
 
-# Remove completion setup from shell rc files
 for rc in "$ZDOTDIR_PATH/.zshrc" "$HOME/.bashrc"; do
   if [[ -f "$rc" ]] && grep -q '# >>> claude-profile completions >>>' "$rc"; then
     sed -i.bak '/# >>> claude-profile completions >>>/,/# <<< claude-profile completions <<</d' "$rc"

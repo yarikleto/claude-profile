@@ -18,20 +18,18 @@ _assert_profile_path_safe() {
   fi
 }
 
-# Keep stored profiles as independent copies. Move-mode switches can temporarily
-# place trusted live symlinks in a profile, and older save formats could leave
-# them there as well. Replace each payload symlink with a regular copy of its
-# target before history staging or loading. Fails on broken symlinks.
+# Stored profiles must be independent copies; move-mode switches and old save
+# formats can leave trusted live symlinks in the payload. Replace each with a
+# regular copy of its target before history staging or loading.
 _materialize_profile_symlink() (
   local symlink="$1" slot="$2"
   local replacement="$slot/replacement"
   local original="$slot/original-link"
 
-  # The two renames below have a small quarantine window. Keep the trap inside
-  # a subshell so it cannot replace the CLI's lock/op traps, and restore the
-  # original link whenever a signal or command failure leaves its destination
-  # absent. Status 125 tells the caller the only remaining copy of the link is
-  # still in the repair workspace and therefore must not be cleaned up.
+  # The renames below leave a quarantine window: the trap, kept in this subshell
+  # so it cannot replace the CLI's lock/op traps, restores the original link if
+  # its destination is absent. Status 125 means the only copy is in the repair
+  # workspace and must not be cleaned up.
   _restore_quarantined_profile_link() {
     local status=$?
     trap - EXIT INT TERM
@@ -69,10 +67,9 @@ _repair_profile_symlinks() {
       err "Broken symlink in profile: $symlink — cannot make an independent copy"
       return 1
     fi
-    # Build the independent replacement outside the payload. Then quarantine
-    # the original link with a checked rename before installing the copy. This
-    # avoids portable `mv` following a still-present directory symlink, and the
-    # quarantined link can be put back if publication fails.
+    # Build the replacement outside the payload, then quarantine the original
+    # link: the checked rename stops portable `mv` following a still-present
+    # directory symlink. Rollback: _materialize_profile_symlink's trap.
     if [[ -z "$repair_root" ]]; then
       if ! repair_root="$(mktemp -d "$PROFILES_DIR/.symlink-repair.XXXXXX")"; then
         err "Cannot allocate symlink repair workspace — aborting"

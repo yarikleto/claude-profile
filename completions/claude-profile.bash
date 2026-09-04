@@ -11,7 +11,6 @@ _claude_profile_completions() {
     return
   fi
 
-  # Resolve profiles dir: CLAUDE_PROFILE_HOME > XDG_DATA_HOME > default
   local profiles_dir
   if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
     profiles_dir="$CLAUDE_PROFILE_HOME"
@@ -27,7 +26,6 @@ _claude_profile_completions() {
 
   case "${COMP_WORDS[1]}" in
     use|switch)
-      # --force only once a dash is typed; profiles otherwise (also after --force)
       if [[ "$cur" == -* ]]; then
         COMPREPLY=($(compgen -W "--force" -- "$cur"))
       elif [[ ${COMP_CWORD} -eq 2 || "$prev" == "--force" ]]; then

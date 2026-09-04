@@ -50,7 +50,6 @@ cmd_edit() {
   _require_profile_exists "$name"
   _refuse_if_op_interrupted
 
-  # Auto-save live state so the profile dir has the latest files
   local is_active=false
   if [[ "$(get_current)" == "$name" ]]; then
     is_active=true
@@ -58,10 +57,8 @@ cmd_edit() {
   fi
 
   local profile_dir="$PROFILES_DIR/$name"
-  # A shell-split $EDITOR (vim, nano, "code --wait") runs to completion before
-  # returning — the only case where we can reliably reload the edit afterwards.
-  # `code` (no --wait) / `open` return immediately, so a reload would just race
-  # the still-open editor; leave those as before.
+  # $EDITOR runs to completion — the only case where a reload is safe. `code`
+  # (no --wait) / `open` return immediately; a reload would race that editor.
   local blocking=false
   if [[ -n "${EDITOR:-}" ]]; then
     # EDITOR may carry arguments ("code --wait") — let a shell split it

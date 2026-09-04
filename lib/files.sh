@@ -1,14 +1,10 @@
 # files.sh — Full-directory operations between live ~/.claude/ and profile directories
 
-# Directory entries the tool never copies, moves, or deletes when syncing
-# between live ~/.claude/ and profile dirs:
-#   .  ..            directory self / parent
-#   .git .gitignore  git metadata. Profile dirs carry the tool's OWN (written
-#                    by _git_init); any .git/.gitignore in live ~/.claude/ is
-#                    the USER's, left wholly untouched — never ingested into a
-#                    profile, never clobbered, never deleted.
-# To skip another entry everywhere, add one pattern below; every copy/move/
-# clear/summary loop runs through this predicate.
+# Entries never copied, moved, or deleted when syncing between live ~/.claude/
+# and profile dirs. Profile dirs carry their own .git/.gitignore (written by
+# _git_init); any in live ~/.claude/ are the USER's — never ingested into a
+# profile, never clobbered, never deleted. To skip another entry everywhere,
+# add one pattern below; every copy/move/clear/summary loop uses this predicate.
 _skip_entry() {
   case "$1" in
     . | .. | .git | .gitignore | .claude-profile-home.json) return 0 ;;
@@ -97,14 +93,11 @@ _live_state_nonempty() {
   return 1
 }
 
-# True (0) when the live state is byte-identical to a profile-shaped directory
-# (live ~/.claude/ entries minus skipped git metadata, plus ~/.claude.json as
-# the directory's .claude.json). A live state that already exists elsewhere is
-# safe to replace.
+# True (0) when the live state is byte-identical to a profile-shaped directory.
+# A live state that already exists elsewhere is safe to replace.
 _live_state_equals_dir() {
   local dir="$1"
   local f base
-  # Every live entry must have an identical counterpart in $dir
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     base="$(basename "$f")"
     if _skip_entry "$base"; then
@@ -190,7 +183,6 @@ _snapshot_current() {
   local dst="$1"
   _assert_profile_path_safe "$dst"
   _assert_live_has_no_broken_symlinks || return 1
-  # Copy everything from CLAUDE_DIR
   local f
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
@@ -202,7 +194,6 @@ _snapshot_current() {
       cp -RL "$f" "$dst/$base"
     fi
   done
-  # Special: always copy ~/.claude.json to the reserved home location
   if [[ -e "$HOME/.claude.json" ]]; then
     cp -RL "$HOME/.claude.json" "$(_profile_home_json "$dst")"
   fi
@@ -218,25 +209,22 @@ _save_current_to() {
   local move="${3:-}"
   _assert_profile_path_safe "$dst"
   mkdir -p "$dst"
-  # An empty live state is never worth snapshotting — and after an
-  # interrupted switch it is exactly the state that must not be allowed to
-  # propagate deletions into a profile that still holds everything.
+  # An empty live state is never worth snapshotting — after an interrupted
+  # switch, saving it would propagate deletions into a still-complete profile.
   if ! _live_state_nonempty; then
     return 0
   fi
   if [[ "$move" != "--move" ]]; then
     _assert_live_has_no_broken_symlinks || return 1
   fi
-  # Clean any staging left behind by an earlier interrupted copy. Staging lives
-  # at the store root, so this never touches a real `.saving.*` file a user may
-  # keep inside their profile.
+  # Clean staging left by an earlier interrupted copy. It lives at the store
+  # root, not in the profile payload — see _staging_dir.
   local staging
   staging="$(_staging_dir)"
   rm -rf "$staging" 2>/dev/null || true
   local f base
-  # Deletions propagate: destination entries with no live counterpart go
-  # away. This runs BEFORE the move/copy loop — after a --move pass the live
-  # dir is empty and this comparison would wipe the freshly moved entries.
+  # Deletions propagate. Must run BEFORE the move loop — after a --move the live
+  # dir is empty and this would wipe the entries just moved.
   for f in "$dst"/* "$dst"/.*; do
     base="$(basename "$f")"
     # The reserved home file is skipped here (handled below); a root
@@ -392,10 +380,8 @@ _load_profile_to_live() {
   # target we would copy into the live config.
   _assert_profile_path_safe "$profile_dir"
 
-  # Pre-validate
   _validate_profile_for_load "$profile_dir" || return 1
 
-  # Clear CLAUDE_DIR contents
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
@@ -420,7 +406,6 @@ _load_profile_to_live() {
     legacy_root_home="yes"
   fi
 
-  # Copy/move profile contents to live locations
   for f in "$profile_dir"/* "$profile_dir"/.*; do
     local base
     base="$(basename "$f")"
@@ -447,11 +432,9 @@ _load_profile_to_live() {
     cp -RP "$home_src" "$HOME/.claude.json"
   fi
 
-  # Ensure CLAUDE_DIR exists after clearing
   mkdir -p "$CLAUDE_DIR"
 }
 
-# Restore from the original backup into live locations.
 _restore_from_backup() {
   local backup_dir="$PROFILES_DIR/.pre-profiles-backup"
   if [[ ! -d "$backup_dir" ]]; then

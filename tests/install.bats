@@ -4,12 +4,10 @@ load test_helper
 REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 
 setup() {
-  # Isolated HOME
   export HOME="$BATS_TEST_TMPDIR/home"
   export ZDOTDIR="$HOME"
   mkdir -p "$HOME"
 
-  # Install to isolated location
   export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/bin"
   export CLAUDE_PROFILE_COMPLETIONS_DIR="$BATS_TEST_TMPDIR/completions"
   mkdir -p "$CLAUDE_PROFILE_COMPLETIONS_DIR"
@@ -108,7 +106,6 @@ setup() {
 @test "installs completions to COMPLETIONS_DIR" {
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
-  # At least one completion file should exist
   local count
   count="$(find "$CLAUDE_PROFILE_COMPLETIONS_DIR" -type f | wc -l | tr -d ' ')"
   [ "$count" -ge 1 ]
@@ -130,7 +127,6 @@ setup() {
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
   [ -f "$HOME/.oh-my-zsh/custom/completions/_claude-profile" ]
-  # Should NOT also install to ~/.zfunc
   [ ! -f "$HOME/.zfunc/_claude-profile" ]
 }
 
@@ -140,7 +136,6 @@ setup() {
   mkdir -p "$HOME/.oh-my-zsh"
 
   bash "$REPO_DIR/install.sh" >/dev/null 2>&1
-  # Installed file should match the source
   diff "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.oh-my-zsh/custom/completions/_claude-profile"
 }
 
@@ -178,7 +173,6 @@ EOF
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]
   [ -f "$HOME/.zfunc/_claude-profile" ]
-  # Verify content matches source
   diff "$REPO_DIR/completions/claude-profile.zsh" "$HOME/.zfunc/_claude-profile"
 }
 
@@ -252,13 +246,11 @@ EOF
 }
 
 @test "remote-install: temp clone directory is cleaned up" {
-  # Count tmp dirs before
   local tmp_before
   tmp_before="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' -type d 2>/dev/null | wc -l | tr -d ' ')"
 
   CLAUDE_PROFILE_REPO="file://$REPO_DIR" bash "$REPO_DIR/remote-install.sh" >/dev/null 2>&1
 
-  # Count tmp dirs after — should not have leftover clone dirs
   local tmp_after
   tmp_after="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' -type d 2>/dev/null | wc -l | tr -d ' ')"
   [ "$tmp_after" -le "$tmp_before" ]

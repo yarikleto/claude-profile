@@ -260,6 +260,90 @@ Version is defined in the top-level `VERSION` file. This is the best-fit convent
 
 Never create a git tag without updating `VERSION` first — `claude-profile version` must match the tag. See `docs/homebrew-tap-setup.md` for full details.
 
+## Code style
+
+Write for the next reader: someone debugging a data-loss report with no context on why the
+code is shaped this way.
+
+### Comments
+
+The code already says *what*. A comment earns its place only by saying *why*, and only when
+the reader cannot recover that from the code itself.
+
+**Delete on sight:**
+
+- A comment that paraphrases the line under it — `# Copy everything from CLAUDE_DIR` above a `cp` loop.
+- A function header that restates the function name — `# Require a profile name` above `_require_name`.
+- Step labels inside a function: `# Pre-validate`, `# Clear the directory`, `# Auto-save before switching`.
+- Decorative banners (`# ─── Dispatch ───`) in source. Module boundaries are files, not
+  ASCII rules. Exception: in a long flat `.bats` file a banner that names an invariant
+  (`# ─── Original backup is never modified ───`) is the only grouping `@test` blocks
+  get — keep those.
+- Commented-out code. Git remembers it.
+
+**Keep — this is what comments are for:**
+
+- Safety and ordering invariants: why deletion propagation runs *before* the move loop; why the
+  phase marker is written *before* the first destructive `mv`.
+- Crash-recovery reasoning: what an interrupted operation leaves on disk, and which command repairs it.
+- Portability workarounds: why `_canonical_path` exists instead of `realpath`.
+- Why the obvious simpler approach is wrong: why canonical paths are compared instead of raw
+  strings; why `commit-tree` + `update-ref` instead of `git commit`.
+- Non-obvious bash/git semantics: `[{]` avoiding the interval-expression meaning of `\{`; a
+  linked-worktree `commondir` being a text redirect rather than a symlink.
+
+**Keep them short.** One or two sentences. If the reasoning needs a paragraph it belongs in
+`docs/architecture.md` — leave a pointer, not the derivation. State an invariant once at its
+definition, not again at every call site.
+
+**`#` is not always a comment.** These are load-bearing *data*, and tests assert on them
+byte-for-byte:
+
+- `lib/config.sh` — `GITIGNORE_CONTENT`, `LEGACY_GITIGNORE_CONTENT`, and the
+  `# BEGIN claude-profile managed:` / `# claude-profile-history:` markers
+- `install.sh` / `uninstall.sh` — the `# >>> claude-profile completions >>>` rc-file markers
+- Any `#` inside a quoted string or heredoc, plus `#!` shebangs and `# shellcheck` directives
+
+Never bulk-edit comments with a regex over `^\s*#`. Change one reviewed block at a time, then
+confirm nothing but comments moved:
+
+```bash
+git diff -U0 -- claude-profile lib commands install.sh | grep -E '^[-+]' | grep -vE '^(\+\+\+|---)|^[-+][[:space:]]*(#|$)'
+```
+
+Empty output means no code changed. Follow it with `bash -n` on every touched file — deleting
+a comment can leave an `if`/`else` branch empty, which is a syntax error that `bats` reports
+far less clearly.
+
+### Readable Bash
+
+Let naming carry the meaning so the comment doesn't have to:
+
+- `cmd_<name>()` — a user-facing command, one per dispatch entry.
+- `_<verb>_<noun>()` — an internal helper; the leading `_` means "not part of the CLI surface".
+- `_assert_*` fails on violation; `_ensure_*` makes it so and is idempotent; `_require_*`
+  validates an argument; `_is_*` / `_*_nonempty` return a status and print nothing. Pick the
+  prefix that matches the behavior and the function needs no header comment.
+- Declare every function-local with `local`. Modules are sourced into one shell, so an
+  unlocalized variable is a global shared by every command.
+
+Keep functions small enough to hold in your head. Past ~60 lines, look for the seam — usually
+validation, destructive phase, reporting. `cmd_restore` reads as orchestration precisely
+because `_restore_apply_tree` and `_restore_profile_after_failure` live in `lib/restore.sh`.
+
+Respect the module boundaries in Architecture: `lib/profile_safety.sh` never calls into
+`lib/git.sh` or `lib/files.sh`, and command files never mutate live payload directly.
+
+Quote every expansion (`"$dir"`, `"${dst:?}/$base"`). The `:?` guard on a path passed to
+`rm -rf` is not optional — an empty variable there deletes the wrong tree.
+
+Validate before the destructive step, never after: a check that runs once the live files are
+cleared cannot save anything. Report failures through `err` plus a non-zero return. Reach for
+`|| true` only where failure is genuinely expected, and say which case in a short comment.
+
+Prefer one obvious way over a clever one. A reader who has to re-derive a pipeline before they
+can judge whether it is safe will not notice that it isn't.
+
 ## Common pitfalls
 
 - **`set -euo pipefail`**: Don't use `[[ cond ]] && action` — if the condition is false, the script exits. Use `if/then/fi`.

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Install claude-profile
 set -euo pipefail
 
 INSTALL_DIR="${CLAUDE_PROFILE_INSTALL_DIR:-$HOME/.local/bin}"
@@ -23,7 +22,6 @@ fi
 
 info "Installing from $SCRIPT_DIR..."
 
-# ─── Install binary + modules ──────────────────────────────
 INSTALL_LIB="$INSTALL_DIR/claude-profile-lib"
 mkdir -p "$INSTALL_DIR" "$INSTALL_LIB/lib" "$INSTALL_LIB/commands"
 
@@ -50,7 +48,6 @@ chmod +x "$INSTALL_DIR/claude-profile"
 
 ok "Installed to $INSTALL_DIR/claude-profile"
 
-# ─── Install shell completions ──────────────────────────────
 COMPLETIONS_NEED_SETUP=""
 
 expand_home_path() {
@@ -128,7 +125,6 @@ install_zsh_completions() {
     else
       # Use ~/.zfunc — conventional user completion dir for zsh
       target="$HOME/.zfunc"
-      # Check if fpath already includes it (via .zshrc)
       if ! grep -q '\.zfunc' "$ZDOTDIR_PATH/.zshrc" 2>/dev/null; then
         COMPLETIONS_NEED_SETUP="zsh"
       fi
@@ -176,7 +172,6 @@ case "$current_shell" in
         install_bash_completions "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
 esac
 
-# ─── Resolve profiles dir ──────────────────────────────────
 CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
 if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
   PROFILES_DIR="$CLAUDE_PROFILE_HOME"
@@ -186,7 +181,6 @@ else
   PROFILES_DIR="$HOME/.local/share/claude-profile"
 fi
 
-# ─── Refuse pathological nesting before any store write ─────
 # Mirror the CLI's config.sh guard: a store inside the live dir (or the
 # reverse) makes the switch loops destroy the store. Canonicalize so a
 # trailing slash, `..`, a relative spelling, or a symlink can't slip past.
@@ -219,7 +213,6 @@ if [[ "$CANON_CLAUDE" == "$CANON_PROFILES"/* ]]; then
   err "Live config dir ($CLAUDE_DIR) must not be inside the profile store ($PROFILES_DIR)"
 fi
 
-# ─── Migrate from old location ──────────────────────────────
 OLD_PROFILES_DIR="$CLAUDE_DIR/__profiles__"
 if [[ -d "$OLD_PROFILES_DIR" && ! -d "$PROFILES_DIR" && ! -L "$PROFILES_DIR" ]]; then
   info "Migrating profiles from $OLD_PROFILES_DIR to $PROFILES_DIR..."
@@ -228,7 +221,6 @@ if [[ -d "$OLD_PROFILES_DIR" && ! -d "$PROFILES_DIR" && ! -L "$PROFILES_DIR" ]];
   ok "Migrated profiles to $PROFILES_DIR"
 fi
 
-# ─── Create seed directory ──────────────────────────────────
 SEED_DIR="$PROFILES_DIR/.seed"
 if [[ ! -d "$SEED_DIR" ]]; then
   mkdir -p "$SEED_DIR"
@@ -237,13 +229,11 @@ if [[ ! -d "$SEED_DIR" ]]; then
   ok "Created seed templates in $SEED_DIR"
 fi
 
-# ─── Install statusline ─────────────────────────────────────
 # Cosmetic step — its failure must not abort PATH/completion setup below
 if ! "$INSTALL_DIR/claude-profile" statusline install; then
   echo -e "${RED}✗${NC} Status line setup failed — run 'claude-profile statusline install' manually" >&2
 fi
 
-# ─── Check PATH ─────────────────────────────────────────────
 if ! echo "$PATH" | tr ':' '\n' | grep -Fqx "$INSTALL_DIR"; then
   echo ""
   echo -e "${BOLD}Add to your PATH:${NC}"
@@ -256,7 +246,6 @@ if ! echo "$PATH" | tr ':' '\n' | grep -Fqx "$INSTALL_DIR"; then
   echo ""
 fi
 
-# ─── Auto-configure shell completions ───────────────────────
 COMPLETION_BEGIN="# >>> claude-profile completions >>>"
 COMPLETION_END="# <<< claude-profile completions <<<"
 

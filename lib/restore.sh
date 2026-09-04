@@ -24,11 +24,10 @@ _restore_path_is_disposable() {
   return 1
 }
 
-# Build a tree containing only the target state a restore is allowed to touch:
-# ordinary configuration plus durable memory. Disposable roots are omitted even
-# if an old/manual commit accidentally tracked them, so applying this tree leaves
-# their current untracked worktree copies alone. The current tool-owned policy is
-# staged from the worktree rather than taken from the target revision.
+# Tree of the only state a restore may touch: config plus durable memory.
+# Disposable roots are omitted even if an old commit tracked them, so their
+# untracked worktree copies survive. .gitignore comes from the worktree, not
+# the target ref.
 _restore_build_target_tree() (
   local profile_dir="$1" ref="$2" preserve_memory="$3"
   local scratch index entries filtered current_entries record path tree
@@ -157,10 +156,9 @@ _restore_run_path_batch() {
   esac
 }
 
-# A filesystem leaf is protected only when the current allowed history tracks
-# that exact leaf. Calling ls-files for a directory path is insufficient: Git
-# also reports success when only descendants match, which can hide ignored
-# files that a target file would otherwise replace.
+# Protected means the allowed history tracks that exact leaf. ls-files on a
+# directory also succeeds when only descendants match, hiding ignored files a
+# target file would replace.
 _restore_worktree_leaf_is_protected() {
   local profile_dir="$1" path="$2"
   if [[ "$path" == ".gitignore" || "$path" == .gitignore/* ]] ||
@@ -192,11 +190,10 @@ _restore_apply_target_tree() (
 
   _restore_write_allowed_paths "$profile_dir" "$rollback_tree" "$current_paths" || return 2
   _restore_write_allowed_paths "$profile_dir" "$target_tree" "$target_paths" || return 2
-  # An outer Git tree stores an embedded repository only as a gitlink commit
-  # ID; none of that repository's tracked or untracked worktree content is in
-  # the safety commit. `git rm` recursively removes the directory, so refuse
-  # any allowed current/target gitlink before touching the worktree. Gitlinks
-  # under disposable roots are excluded from restore and remain untouched.
+  # A gitlink stores only a commit ID; the embedded repository's worktree
+  # content is not in the safety commit, and `git rm` removes the directory.
+  # Refuse any allowed current/target gitlink before touching the worktree;
+  # disposable roots excepted.
   for tree in "$rollback_tree" "$target_tree"; do
     if ! git -C "$profile_dir" ls-tree -rz --full-tree "$tree" \
         > "$gitlink_entries" 2>/dev/null; then
@@ -215,12 +212,10 @@ _restore_apply_target_tree() (
       return 2
     done < "$gitlink_entries"
   done
-  # A target path can collide with a current file deliberately excluded by a
-  # custom ignore rule. It can also replace a directory that contains ignored
-  # content, or sit below an untracked file/symlink ancestor. The safety commit
-  # cannot protect any of those leaves, so inspect the actual worktree shape
-  # before the destructive phase. Directories containing only allowed tracked
-  # leaves remain safe for ordinary directory/file history transitions.
+  # A target path can hit a file hidden by a custom ignore rule, replace a
+  # directory holding ignored content, or sit under an untracked file/symlink
+  # ancestor. The safety commit protects none of those, so check the worktree
+  # before the destructive phase; a directory of only protected leaves is safe.
   while IFS= read -r -d '' path; do
     if [[ -L "$profile_dir/$path" ||
           ( -e "$profile_dir/$path" && ! -d "$profile_dir/$path" ) ]]; then

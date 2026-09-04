@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
 # pre-push hook — run the full bats suite and block the push on any failure.
-#
-# This hook is version-controlled. It is activated per-clone by pointing git at
-# the tracked hooks directory:
-#
-#     git config core.hooksPath hooks
-#
-# (run scripts/setup-hooks.sh once to do that automatically).
-#
-# To push despite red/uninstalled tests in an emergency, bypass with:
-#
-#     git push --no-verify
-#
+# Version-controlled; activated per-clone by `git config core.hooksPath hooks`
+# (scripts/setup-hooks.sh does that). Emergency bypass: git push --no-verify.
 set -euo pipefail
 
 RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' BOLD='\033[1m' NC='\033[0m'

@@ -4,12 +4,10 @@ load test_helper
 REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 
 setup() {
-  # Isolated HOME
   export HOME="$BATS_TEST_TMPDIR/home"
   export ZDOTDIR="$HOME"
   mkdir -p "$HOME"
 
-  # Install to isolated location first
   export CLAUDE_PROFILE_INSTALL_DIR="$BATS_TEST_TMPDIR/bin"
   export CLAUDE_PROFILE_COMPLETIONS_DIR="$BATS_TEST_TMPDIR/completions"
   mkdir -p "$CLAUDE_PROFILE_COMPLETIONS_DIR"
@@ -84,7 +82,6 @@ setup() {
   run bash "$REPO_DIR/uninstall.sh"
   [ "$status" -eq 0 ]
 
-  # Profiles must still exist
   [ -d "$profiles_dir/myprofile" ]
   [ -f "$profiles_dir/myprofile/settings.json" ]
 }
@@ -115,7 +112,6 @@ EOF
   [ "$status" -eq 0 ]
   ! grep -q '# >>> claude-profile completions >>>' "$HOME/.zshrc"
   ! grep -q 'zfunc' "$HOME/.zshrc"
-  # Preserved surrounding content
   grep -q 'PATH="/usr/bin' "$HOME/.zshrc"
   grep -q 'OTHER="keep"' "$HOME/.zshrc"
   [[ "$output" == *"Removed completion setup from"* ]]
@@ -152,7 +148,6 @@ EOF
 
   run bash "$REPO_DIR/uninstall.sh"
   [ "$status" -eq 0 ]
-  # .zshrc untouched
   grep -q 'PATH="/usr/bin' "$HOME/.zshrc"
 }
 

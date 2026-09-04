@@ -14,5 +14,4 @@ ok()    { echo -e "${GREEN}✓${NC} $*"; }
 warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
 err()   { echo -e "${RED}✗${NC} $*" >&2; }
 
-# Styled profile name for use in messages
 _pname() { echo -e "${CYAN}${BOLD}$1${NC}"; }

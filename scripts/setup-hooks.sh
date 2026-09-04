@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# One-time developer setup: activate the version-controlled git hooks in hooks/.
-#
-#     ./scripts/setup-hooks.sh
-#
-# This points git at the tracked hooks directory so pre-push runs the bats suite.
+# One-time developer setup: point git at the version-controlled hooks in hooks/,
+# so pre-push runs the bats suite.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"

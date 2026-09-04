@@ -15,7 +15,6 @@ _resolve_symlink() {
   printf '%s\n' "$f"
 }
 
-# True (0) when $file parses as JSON with any available tool.
 _json_valid() {
   local file="$1"
   if command -v jq &>/dev/null; then
@@ -33,11 +32,9 @@ _json_valid() {
   return 1
 }
 
-# Merge a key into a JSON file. Uses jq, python3, or node (first available).
-# The merged JSON is built in a temp beside the *resolved* target and then
-# atomically renamed onto it — a symlinked settings.json stays a symlink, an
-# interrupted or unpermitted write never truncates the original, and the write
-# is checked so callers hear about a failure instead of a false success.
+# Merge a key into a JSON file. The temp is built beside the *resolved* target
+# and atomically renamed onto it: a symlinked settings.json stays a symlink,
+# and an interrupted or unpermitted write never truncates the original.
 # Returns 1 on any failure (no tool, invalid JSON, unwritable target).
 _json_merge() {
   local file="$1" key="$2" value="$3"
