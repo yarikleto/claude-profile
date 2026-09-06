@@ -32,12 +32,64 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 
 Profiles are stored in `~/.local/share/claude-profile/` (XDG-compliant), separate from `~/.claude/`. Each profile snapshots the **entire** `~/.claude/` directory plus `~/.claude.json`.
 
-That is your user-level configuration. Claude Code also reads per-project files from the repository you open — `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `CLAUDE.md` — plus any managed settings your organization deploys, and none of those are switched. See [What is not switched](../README.md#what-is-not-switched) for how they combine with the profile.
-
 Inside a stored profile, the home-level `~/.claude.json` is named
 `.claude-profile-home.json`. The reserved name keeps it separate from a payload
 file literally named `~/.claude/.claude.json`, which remains `.claude.json` at
 the profile root.
+
+## What a profile covers
+
+A profile holds your **user-level** configuration. Claude Code reads four other
+places that no profile contains or swaps.
+
+| Lives in the repository | What it carries |
+| --- | --- |
+| `.claude/settings.json` | Settings shared with the team |
+| `.claude/settings.local.json` | Your own settings for that repo — where **Yes, and don't ask again** saves an allow rule |
+| `.mcp.json` | Project-scoped MCP servers |
+| `CLAUDE.md`, `.claude/agents/`, `.claude/skills/` | Project instructions, agents, and skills |
+
+Managed settings are the fifth: a `managed-settings.json` file, an MDM policy,
+or server-managed settings from the claude.ai console, deployed by your
+organization and outranking everything below.
+
+How they combine with the profile, per Claude Code's
+[settings precedence](https://code.claude.com/docs/en/settings#settings-precedence):
+
+- **Permission rules from every file merge into one set, evaluated `deny` →
+  `ask` → `allow`.** Scope does not break the tie, so a profile's `deny` or
+  `ask` rule still holds in a repo whose `.claude/settings.local.json` allows
+  the same call. What a repo's saved allow rules do reach is everything the
+  profile leaves un-ruled — so write a restrictive profile as explicit
+  `deny`/`ask` entries rather than relying on an empty `allow` list.
+- **Where both files set the same single-value key, the repository's wins.** A
+  project's `permissions.defaultMode` beats the profile's, except `auto` and
+  `bypassPermissions`, which project files cannot set. Not every key is up for
+  grabs: a repository's shared `.claude/settings.json` cannot set the keys the
+  [settings reference](https://code.claude.com/docs/en/settings-reference#all-settings)
+  scopes `User or managed`, `Managed`, or `Global config`, so for those the
+  profile's value stands.
+- **Project-scoped MCP servers outrank user-scoped ones and are not merged**, so
+  a server declared in a repo's `.mcp.json` loads under every profile.
+
+Run `/status` inside Claude Code to list the settings files the running session
+actually loaded.
+
+### What `~/.claude.json` carries
+
+`~/.claude.json` is Claude Code's own file in `$HOME`, outside `~/.claude/`.
+Alongside MCP server configuration it records which account you are signed in
+as, per-project state such as trust decisions and MCP server approvals, and the
+global config keys `/config` writes. `new` seeds it empty, so a fresh profile
+runs onboarding again and asks you to trust each folder.
+
+The login token itself is stored separately: on macOS in the Keychain, which
+profiles never touch, and on Linux and Windows in `~/.claude/.credentials.json`,
+which is inside the snapshot — so on those platforms the token swaps with the
+profile. macOS
+[falls back to that same file](https://code.claude.com/docs/en/iam#credential-management)
+whenever the Keychain refuses the write, such as a locked Keychain in an SSH
+session.
 
 ## Seed templates
 
