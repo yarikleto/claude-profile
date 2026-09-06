@@ -112,9 +112,17 @@ That's it. Your original config is automatically backed up and can be restored w
 
 ## What gets switched
 
-Each profile snapshots the **entire** `~/.claude/` directory plus `~/.claude.json`. Switching profiles means a completely different Claude "brain" — settings, memory, conversations, plugins, history, everything.
+Each profile snapshots the **entire** `~/.claude/` directory plus `~/.claude.json` — user settings, memory, conversations, agents, skills, plugins, history. `new` seeds `~/.claude.json` empty, so a fresh profile runs onboarding again and asks you to trust each folder.
 
 Profiles are stored in `~/.local/share/claude-profile/` (XDG-compliant), separate from `~/.claude/`.
+
+### What is not switched
+
+That covers your **user-level** configuration. Claude Code also reads per-project files from the repository you open — `.claude/settings.json`, `.claude/settings.local.json` (where **Yes, and don't ask again** saves an allow rule), `.mcp.json`, and project `CLAUDE.md` — plus any managed settings your organization deploys. None of those are switched, and a profile does not override them.
+
+Permission rules from every file merge into one set, evaluated `deny` → `ask` → `allow`, so a profile's `deny`/`ask` rule holds against a repo's saved allow rules. What those allow rules do reach is anything the profile leaves un-ruled — so write a restrictive profile as explicit `deny`/`ask` entries rather than relying on an empty `allow` list.
+
+[What a profile covers](docs/configuration.md#what-a-profile-covers) has the full precedence rules, what `~/.claude.json` carries, and where your login is stored.
 
 ## Commands
 
@@ -130,6 +138,9 @@ delete <name> [-f]      Delete a profile
 deactivate              Restore original state, turn off profiles
 deactivate --keep       Detach from profiles, keep current config
 ```
+
+> [!WARNING]
+> Quit your Claude Code sessions before you switch. Claude Code watches its settings files and reloads `permissions` and `hooks` into a running session, so `use` can replace a live session's guardrails mid-conversation. It also moves that session's transcript and history files out from under it.
 
 ### Deactivating and coming back
 
@@ -238,13 +249,17 @@ See the full [migration guide](docs/migration.md) for details and troubleshootin
 <details>
 <summary><strong>Does switching profiles affect running Claude Code sessions?</strong></summary>
 
-Claude Code reads config at startup. A running session won't pick up profile changes until you restart it.
+Yes — quit them first. Claude Code [watches its settings files and reloads them](https://code.claude.com/docs/en/settings#when-edits-take-effect) without a restart, `permissions` and `hooks` included, so switching from a second terminal replaces a live session's guardrails mid-conversation. `model`, `effortLevel`, and `outputStyle` are read once at session start, so the session ends up running on a mix of both profiles — `/model` and `/effort` move the first two mid-session, and `outputStyle` applies after `/clear` or a restart.
+
+`use` moves rather than copies, so that session's transcript under `projects/`, plus `shell-snapshots/` and `file-history/`, are relocated into the profile it just auto-saved at the same moment.
 </details>
 
 <details>
 <summary><strong>What about MCP servers?</strong></summary>
 
-`~/.claude.json` (which contains MCP server configs) is managed by profiles. Each profile gets its own MCP server setup.
+User-scoped and per-project servers live in `~/.claude.json`, which profiles manage — so each profile gets its own set.
+
+Project-scoped servers are the exception. They are declared in a `.mcp.json` file inside the repository, [outrank user-scoped ones](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence), and load under every profile. Your approval of them is per-project state in `~/.claude.json`, so a fresh profile asks you to approve them again.
 </details>
 
 <details>

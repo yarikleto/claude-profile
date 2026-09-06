@@ -97,8 +97,11 @@ Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 
 Priority: `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME/claude-profile` > `$HOME/.local/share/claude-profile`
 
-The home-level `~/.claude.json` file (including MCP server config) lives in
-`$HOME`, not inside `~/.claude/`. It is stored as
+The home-level `~/.claude.json` file lives in `$HOME`, not inside `~/.claude/`.
+Alongside MCP server configuration it holds the signed-in account record,
+per-project state such as trust decisions and MCP server approvals, and the
+global config keys `/config` writes — so seeding it as `{}` in a new profile
+resets onboarding and folder trust, not just MCP. It is stored as
 `.claude-profile-home.json` inside each profile directory and copied to/from
 `$HOME/.claude.json` on switch. This reserved name is disjoint from a live
 payload file literally named `~/.claude/.claude.json`, which is stored at the
