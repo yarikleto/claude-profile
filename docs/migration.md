@@ -31,8 +31,8 @@ After this, your `~/.claude/` will look exactly as if you'd configured it manual
 After running it:
 - `~/.claude/settings.json` — your current profile's settings (unchanged)
 - `~/.claude/CLAUDE.md` — your current profile's instructions (unchanged)
-- `~/.claude/projects/` — your current profile's memory (unchanged)
-- `~/.claude.json` — your current profile's MCP servers (unchanged)
+- `~/.claude/projects/` — your current profile's session history and auto memory (unchanged)
+- `~/.claude.json` — your current profile's MCP servers, signed-in account, per-project trust decisions, and `/config` keys (unchanged)
 - `~/.local/share/claude-profile/` — all saved profiles (can be deleted or kept for reference)
 
 ## If you change your mind

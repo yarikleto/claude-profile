@@ -32,6 +32,8 @@ Think of it like git branches. Your original `~/.claude/` state is the **main br
 
 Profiles are stored in `~/.local/share/claude-profile/` (XDG-compliant), separate from `~/.claude/`. Each profile snapshots the **entire** `~/.claude/` directory plus `~/.claude.json`.
 
+That is your user-level configuration. Claude Code also reads per-project files from the repository you open — `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `CLAUDE.md` — plus any managed settings your organization deploys, and none of those are switched. See [What is not switched](../README.md#what-is-not-switched) for how they combine with the profile.
+
 Inside a stored profile, the home-level `~/.claude.json` is named
 `.claude-profile-home.json`. The reserved name keeps it separate from a payload
 file literally named `~/.claude/.claude.json`, which remains `.claude.json` at
@@ -67,11 +69,15 @@ disposable/session data while all files are still copied between profiles:
 
 This means `history`, `diff`, and `restore` cover persistent memory as well as
 configuration, without filling history with transcripts. Memory can contain
-personal preferences and project learnings; because it is versioned, deleting
-it from the live profile does not remove older copies from that profile's Git
-history. These repositories and Git objects stay local and are not uploaded by
-claude-profile, but they are plaintext and protected only by filesystem
-permissions.
+personal preferences and project learnings, and the stored `~/.claude.json`
+carries the signed-in account record and MCP server definitions; because both
+are versioned, deleting them from the live profile does not remove older copies
+from that profile's Git history. On Linux and Windows — and on macOS whenever
+the Keychain write is rejected — `.credentials.json` is versioned too, so
+`restore` can bring an earlier login back. These repositories and Git objects
+stay local and are not uploaded by claude-profile; they are plaintext, protected
+only by filesystem permissions — the store is created `chmod 700` and every
+command runs under `umask 077`, so the copies stay readable just by you.
 
 Existing profiles receive the managed rules automatically. Their first
 subsequent save establishes the earliest recoverable memory baseline. Restoring
@@ -115,11 +121,13 @@ If you have a custom statusline, `install` won't overwrite it. You can reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_CODE_HOME` | `~/.claude` | Claude Code config directory |
+| `CLAUDE_CODE_HOME` | `~/.claude` | Live Claude Code directory that `claude-profile` snapshots and swaps |
 | `CLAUDE_PROFILE_HOME` | *(see below)* | Override profiles storage location |
 | `XDG_DATA_HOME` | `~/.local/share` | XDG data directory (profiles stored in `$XDG_DATA_HOME/claude-profile`) |
 | `CLAUDE_PROFILE_INSTALL_DIR` | `~/.local/bin` | Install location for the binary |
 | `CLAUDE_PROFILE_COMPLETIONS_DIR` | *(auto-detect)* | Custom completions directory |
+
+`CLAUDE_CODE_HOME` belongs to `claude-profile`; Claude Code does not read it. Claude Code relocates its own home-directory files with [`CLAUDE_CONFIG_DIR`](https://code.claude.com/docs/en/env-vars), which `claude-profile` does not read — so if you set that, point `CLAUDE_CODE_HOME` at the same directory or profiles will manage one Claude Code no longer reads.
 
 ### Storage location resolution
 
