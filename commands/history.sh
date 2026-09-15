@@ -60,15 +60,15 @@ _snapshot_live_for_diff() {
     base="$(basename "$f")"
     # The user's live .git/.gitignore must not be ingested — a live
     # .gitignore's rules would hide untracked changes from the diff
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     if [[ -e "$f" ]]; then
       cp -RL "$f" "$dst/$base" || return 1
     fi
   done
-  if [[ -e "$HOME/.claude.json" ]]; then
-    cp -L "$HOME/.claude.json" "$(_profile_home_json "$dst")" || return 1
+  if [[ -e "$CLAUDE_JSON_FILE" ]]; then
+    cp -L "$CLAUDE_JSON_FILE" "$(_profile_home_json "$dst")" || return 1
   fi
 }
 
@@ -263,6 +263,9 @@ cmd_restore() {
         "$profile_dir" "$resolved" "$preserve_memory")"; then
     err "Could not prepare $ref — rollback not started; current state was saved"
     exit 1
+  fi
+  if [[ "$(get_current)" == "$name" ]]; then
+    _restore_assert_live_layout "$profile_dir" "$target_tree" || return 1
   fi
 
   # Apply the filtered tree without putting ignored session roots through

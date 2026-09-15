@@ -20,6 +20,10 @@ if [[ ! -f "$SCRIPT_DIR/claude-profile" ]]; then
   err "Run install.sh from the cloned repo directory"
 fi
 
+# Use the same live paths and safety checks as the installed CLI, before any
+# installation or completion writes can leave a conflicting setup behind.
+source "$SCRIPT_DIR/lib/config.sh"
+
 info "Installing from $SCRIPT_DIR..."
 
 INSTALL_LIB="$INSTALL_DIR/claude-profile-lib"
@@ -171,47 +175,6 @@ case "$current_shell" in
   *)    install_zsh_completions "$SCRIPT_DIR/completions/claude-profile.zsh" "_claude-profile"
         install_bash_completions "$SCRIPT_DIR/completions/claude-profile.bash" "claude-profile" ;;
 esac
-
-CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
-if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
-  PROFILES_DIR="$CLAUDE_PROFILE_HOME"
-elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
-  PROFILES_DIR="$XDG_DATA_HOME/claude-profile"
-else
-  PROFILES_DIR="$HOME/.local/share/claude-profile"
-fi
-
-# Mirror the CLI's config.sh guard: a store inside the live dir (or the
-# reverse) makes the switch loops destroy the store. Canonicalize so a
-# trailing slash, `..`, a relative spelling, or a symlink can't slip past.
-canonical_path() {
-  local path="$1" tail="" dir parent base
-  dir="$path"
-  while [[ ! -e "$dir" ]]; do
-    base="$(basename "$dir")"
-    tail="/$base$tail"
-    parent="$(dirname "$dir")"
-    [[ "$parent" == "$dir" ]] && break
-    dir="$parent"
-  done
-  local canon
-  if canon="$(cd "$dir" 2>/dev/null && pwd -P)"; then
-    [[ "$canon" == "/" ]] && canon=""
-    local result="$canon$tail"
-    [[ -z "$result" ]] && result="/"
-    printf '%s\n' "$result"
-  else
-    printf '%s\n' "$path"
-  fi
-}
-CANON_PROFILES="$(canonical_path "$PROFILES_DIR")"
-CANON_CLAUDE="$(canonical_path "$CLAUDE_DIR")"
-if [[ "$CANON_PROFILES" == "$CANON_CLAUDE" || "$CANON_PROFILES" == "$CANON_CLAUDE"/* ]]; then
-  err "Profile store ($PROFILES_DIR) must not be inside the live config dir ($CLAUDE_DIR) — set CLAUDE_PROFILE_HOME elsewhere"
-fi
-if [[ "$CANON_CLAUDE" == "$CANON_PROFILES"/* ]]; then
-  err "Live config dir ($CLAUDE_DIR) must not be inside the profile store ($PROFILES_DIR)"
-fi
 
 OLD_PROFILES_DIR="$CLAUDE_DIR/__profiles__"
 if [[ -d "$OLD_PROFILES_DIR" && ! -d "$PROFILES_DIR" && ! -L "$PROFILES_DIR" ]]; then

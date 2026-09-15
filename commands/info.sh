@@ -78,6 +78,7 @@ cmd_edit() {
   # authoritative state. Bracket the destructive reload with the op marker so a
   # crash mid-reload is recoverable (the profile dir keeps its copy).
   if [[ "$is_active" == true && "$blocking" == true ]]; then
+    _validate_profile_for_load "$profile_dir" || return 1
     _set_op_marker "use $name"
     _load_profile_to_live "$profile_dir"
     _clear_op_marker

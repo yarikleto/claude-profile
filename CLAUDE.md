@@ -13,6 +13,7 @@ Development guide for `claude-profile` — a bash CLI tool for switching between
 3. **ALL testing happens in bats** (which isolates `$HOME` automatically) or in a manually isolated env:
    ```bash
    export HOME=$(mktemp -d)
+   unset CLAUDE_CONFIG_DIR
    export CLAUDE_CODE_HOME="$HOME/.claude"
    export CLAUDE_PROFILE_HOME="$HOME/.local/share/claude-profile"
    mkdir -p "$CLAUDE_CODE_HOME"
@@ -64,12 +65,13 @@ completions/
 - **Mutating commands take an exclusive lock** (`$PROFILES_DIR/.lock`, with stale-lock takeover) so concurrent invocations can't interleave rm/mv on the same live files.
 - **The destructive phase of `use`/`new`/`restore`/`deactivate` is bracketed by an `.op-in-progress` marker.** After a crash mid-switch, `use` sweeps the partially moved files back into the marker's target profile before anything can auto-save them into the wrong profile; other mutating commands refuse to run until recovered. `deactivate` completes its own interrupted restore.
 - **Auto-saves are exact snapshots**: entries (and `~/.claude.json`) deleted from the live state are also removed from the profile copy, so deletions don't resurrect on the next switch. An entirely empty live state is never saved.
-- **`~/.claude.json`** lives in `$HOME`, not inside `~/.claude/`. Inside a profile it is stored under the reserved name `.claude-profile-home.json`, keeping it in a namespace disjoint from the live payload — a live file literally named `~/.claude/.claude.json` is captured as the payload entry `.claude.json` without colliding with the home file. A startup migration (`.format` stamp) moves profiles written under the older flat layout.
+- **Live paths honor `CLAUDE_CONFIG_DIR`**: when non-empty, it selects both the directory and its nested `.claude.json`. Otherwise `CLAUDE_CODE_HOME` overrides the directory only, defaulting to `$HOME/.claude`, and the home file stays at `$HOME/.claude.json`. Empty values are unset. Both overrides, if non-empty, must canonically resolve to the same directory or startup fails before writes. Keep one stable live directory per store; independent configurations need separate stores even when used sequentially, because the active marker and original backup are shared within a store.
+- **The resolved `.claude.json`** is stored under the reserved profile name `.claude-profile-home.json`. With `CLAUDE_CONFIG_DIR`, exclude its nested `.claude.json` from ordinary payload operations to prevent duplicate copies. With default paths, a live file literally named `~/.claude/.claude.json` remains the payload entry `.claude.json`, separate from `$HOME/.claude.json`. A startup migration (`.format` stamp) moves profiles written under the older flat layout; changing path overrides does not migrate configurations or stores.
 - **The top-level `VERSION` file is the version source of truth**. `lib/config.sh` reads it at runtime; installers and Homebrew formulas must ship it with the runtime files.
 
 ### Full-directory snapshots
 
-Profiles snapshot the **entire** `~/.claude/` directory plus `~/.claude.json`. There is no item-level tracking for switching — every file in `~/.claude/` is captured. Git history selectively versions configuration plus durable memory (`agent-memory/**` and `projects/*/memory/**`), while project transcripts and the other listed bulk paths remain untracked. The managed `.gitignore` and explicit staging policy must stay in sync.
+Profiles snapshot the **entire** resolved live directory plus the resolved `.claude.json` (by default `~/.claude/` and `~/.claude.json`). There is no item-level tracking for switching — every file is captured, with the resolved `.claude.json` stored separately under its reserved name. Git history selectively versions configuration plus durable memory (`agent-memory/**` and `projects/*/memory/**`), while project transcripts and the other listed bulk paths remain untracked. The managed `.gitignore` and explicit staging policy must stay in sync.
 
 During `use` (switch), pass `--move` to `_save_current_to` and `_load_profile_to_live` for speed. During `save`/`fork`, don't — let them copy.
 
@@ -154,6 +156,7 @@ Tests use [bats-core](https://github.com/bats-core/bats-core). Each test gets a 
 
 **The isolated environment provides:**
 - `$HOME` → `/tmp/.../home/` (unique per test, auto-cleaned)
+- Inherited `$CLAUDE_CONFIG_DIR` is cleared; tests that exercise it set an isolated path
 - `$CLAUDE_CODE_HOME` → `$HOME/.claude/`
 - `$CLAUDE_PROFILE_HOME` → `$HOME/.local/share/claude-profile/`
 - `~/.claude/settings.json` with realistic content

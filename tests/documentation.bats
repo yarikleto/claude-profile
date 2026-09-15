@@ -1,6 +1,28 @@
 #!/usr/bin/env bats
 load test_helper
 
+@test "docs: explain the official config directory and safe test isolation" {
+  local repo_root
+  repo_root="$(dirname "$CLAUDE_PROFILE")"
+
+  grep -F '| `CLAUDE_CONFIG_DIR` |' "$repo_root/docs/configuration.md"
+  grep -F '$CLAUDE_CONFIG_DIR/.claude.json' "$repo_root/docs/configuration.md"
+  grep -F 'unset CLAUDE_CODE_HOME' "$repo_root/docs/configuration.md"
+  grep -F 'export CLAUDE_CONFIG_DIR=' "$repo_root/README.md"
+  grep -F 'unset CLAUDE_CONFIG_DIR' "$repo_root/CLAUDE.md"
+  ! grep -F 'which `claude-profile` does not read' "$repo_root/docs/configuration.md"
+}
+
+@test "docs: custom config upgrades preserve the original backup" {
+  local repo_root
+  repo_root="$(dirname "$CLAUDE_PROFILE")"
+
+  grep -F '### Upgrading with a custom config directory' "$repo_root/docs/configuration.md"
+  grep -F 'one stable live directory per profile store' "$repo_root/docs/configuration.md"
+  grep -F 'export CLAUDE_PROFILE_HOME="$HOME/.local/share/claude-profile-work"' "$repo_root/README.md"
+  grep -F 'fresh `CLAUDE_PROFILE_HOME`' "$repo_root/docs/configuration.md"
+}
+
 @test "docs: home-file recovery matches the current store format" {
   local repo_root stored_name
   repo_root="$(dirname "$CLAUDE_PROFILE")"

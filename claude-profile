@@ -114,9 +114,10 @@ ${CYAN}${BOLD}EXAMPLES${NC}
   ${DIM}\$${NC} claude-profile statusline install           ${DIM}# Profile in Claude Code${NC}
 
 ${CYAN}${BOLD}WHAT GETS SWITCHED${NC}
-  Everything in ${BOLD}~/.claude/${NC} and ${BOLD}~/.claude.json${NC}
+  Everything in ${BOLD}$CLAUDE_DIR/${NC} and ${BOLD}$CLAUDE_JSON_FILE${NC}
 
 ${CYAN}${BOLD}FILES${NC}
+  Live config:   ${BOLD}\$CLAUDE_CONFIG_DIR${NC} ${DIM}(default: ~/.claude; also relocates .claude.json)${NC}
   Profiles dir:  ${BOLD}\$CLAUDE_PROFILE_HOME${NC} ${DIM}(default: ~/.local/share/claude-profile)${NC}
 "
     ;;

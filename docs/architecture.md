@@ -2,7 +2,7 @@
 
 ## Overview
 
-`claude-profile` is a bash CLI tool that switches between independent copies of Claude Code's configuration. It works by copying the entire `~/.claude/` directory in and out of profile directories — no symlinks, no daemons, no background processes.
+`claude-profile` is a bash CLI tool that switches between independent copies of Claude Code's configuration. It works by copying the entire `~/.claude/` directory in and out of profile directories — no symlinks, no daemons, no background processes. Paths in this document show the defaults; `CLAUDE_CONFIG_DIR` relocates the live directory and `.claude.json` as described below.
 
 ```
 User runs            claude-profile use review
@@ -97,17 +97,43 @@ Profiles are stored in an XDG-compliant location, separate from `~/.claude/`:
 
 Priority: `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME/claude-profile` > `$HOME/.local/share/claude-profile`
 
-The home-level `~/.claude.json` file lives in `$HOME`, not inside `~/.claude/`.
+### Live configuration resolution
+
+A non-empty `CLAUDE_CONFIG_DIR` selects both the live directory and its nested
+`.claude.json`. Otherwise, the legacy `CLAUDE_CODE_HOME` override selects the live
+directory, defaulting to `$HOME/.claude`, and the home file stays at
+`$HOME/.claude.json`. Empty values are treated as unset. When both variables are
+non-empty, startup requires them to resolve to the same directory before any
+write; conflicts advise unsetting `CLAUDE_CODE_HOME`.
+
+The store location is independent of the live directory. Each store needs one
+stable live directory: independent configurations need separate
+`CLAUDE_PROFILE_HOME` values even when used sequentially, because the active
+marker and original backup belong to the store. Reusing a store can auto-save
+the wrong live directory into its active profile. Path overrides do not migrate
+existing live files or stores or replace the original backup; upgrades from a
+release that ignored `CLAUDE_CONFIG_DIR` should capture that custom configuration
+with `fork` in a fresh store before switching.
+
+By default, the home-level `~/.claude.json` file lives in `$HOME`, outside `~/.claude/`.
 Alongside MCP server configuration it holds the signed-in account record,
 per-project state such as trust decisions and MCP server approvals, and the
 global config keys `/config` writes — so seeding it as `{}` in a new profile
 resets onboarding and folder trust, not just MCP. It is stored as
 `.claude-profile-home.json` inside each profile directory and copied to/from
-`$HOME/.claude.json` on switch. This reserved name is disjoint from a live
+the resolved `.claude.json` location on switch. When `CLAUDE_CONFIG_DIR` is set,
+its `.claude.json` is excluded from ordinary directory payload operations so it
+is stored and restored only through that reserved name. With default paths,
+this reserved name is disjoint from a live
 payload file literally named `~/.claude/.claude.json`, which is stored at the
 profile root as `.claude.json`. Before format 2, the home-level file used that
 root `.claude.json` path; startup migration moves legacy stores to the reserved
 name.
+
+Loading a default-layout profile into `CLAUDE_CONFIG_DIR` refuses a payload
+`.claude.json`: it would collide with the resolved home file. The profile remains
+untouched and can be used in its original layout or after preserving and renaming
+that payload file.
 
 ## Full-directory snapshots
 
@@ -245,7 +271,8 @@ Defines constants and path resolution:
 
 - `VERSION` — read from the top-level `VERSION` file
 - `PROFILES_DIR` — resolved via `CLAUDE_PROFILE_HOME` > `XDG_DATA_HOME` > default
-- `CLAUDE_DIR` — `${CLAUDE_CODE_HOME:-$HOME/.claude}`
+- `CLAUDE_DIR` — non-empty `CLAUDE_CONFIG_DIR`, then `CLAUDE_CODE_HOME`, then `$HOME/.claude`
+- Live `.claude.json` — inside non-empty `CLAUDE_CONFIG_DIR`, otherwise `$HOME/.claude.json`
 - `SEED_NAMES` / `SEED_CONTENTS` — fallback seed templates
 - `GITIGNORE_CONTENT` — managed policy for durable memory vs session data
 

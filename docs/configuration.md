@@ -4,6 +4,9 @@
 
 Think of it like git branches. Your original `~/.claude/` state is the **main branch** — backed up once and preserved by normal profile operations. Each profile is an independent **fork** you can change freely.
 
+The paths below are defaults. If you set `CLAUDE_CONFIG_DIR`, profiles manage that
+directory and its `.claude.json` instead; see [environment variables](#environment-variables).
+
 ```
 ~/.claude/                                  ← "live" location, what Claude Code reads
 ├── settings.json                           ← from active profile
@@ -77,7 +80,8 @@ actually loaded.
 
 ### What `~/.claude.json` carries
 
-`~/.claude.json` is Claude Code's own file in `$HOME`, outside `~/.claude/`.
+By default, `~/.claude.json` is Claude Code's own file in `$HOME`, outside `~/.claude/`.
+When `CLAUDE_CONFIG_DIR` is set, that file is `$CLAUDE_CONFIG_DIR/.claude.json`.
 Alongside MCP server configuration it records which account you are signed in
 as, per-project state such as trust decisions and MCP server approvals, and the
 global config keys `/config` writes. `new` seeds it empty, so a fresh profile
@@ -173,13 +177,54 @@ If you have a custom statusline, `install` won't overwrite it. You can reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_CODE_HOME` | `~/.claude` | Live Claude Code directory that `claude-profile` snapshots and swaps |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Official Claude Code setting: relocates the live directory and puts `.claude.json` inside it |
+| `CLAUDE_CODE_HOME` | *(unset)* | Legacy `claude-profile` override for the live directory only; Claude Code does not read it |
 | `CLAUDE_PROFILE_HOME` | *(see below)* | Override profiles storage location |
 | `XDG_DATA_HOME` | `~/.local/share` | XDG data directory (profiles stored in `$XDG_DATA_HOME/claude-profile`) |
 | `CLAUDE_PROFILE_INSTALL_DIR` | `~/.local/bin` | Install location for the binary |
 | `CLAUDE_PROFILE_COMPLETIONS_DIR` | *(auto-detect)* | Custom completions directory |
 
-`CLAUDE_CODE_HOME` belongs to `claude-profile`; Claude Code does not read it. Claude Code relocates its own home-directory files with [`CLAUDE_CONFIG_DIR`](https://code.claude.com/docs/en/env-vars), which `claude-profile` does not read — so if you set that, point `CLAUDE_CODE_HOME` at the same directory or profiles will manage one Claude Code no longer reads.
+Prefer [`CLAUDE_CONFIG_DIR`](https://code.claude.com/docs/en/env-vars), which both
+Claude Code and `claude-profile` read. Export it in the shell that runs both:
+
+```bash
+export CLAUDE_CONFIG_DIR="$HOME/.claude-work"
+export CLAUDE_PROFILE_HOME="$HOME/.local/share/claude-profile-work"
+claude-profile fork work
+claude
+```
+
+A non-empty `CLAUDE_CONFIG_DIR` selects the live directory and
+`$CLAUDE_CONFIG_DIR/.claude.json`. Without it, `CLAUDE_CODE_HOME` selects only the
+live directory and the separate file stays at `$HOME/.claude.json`. Empty values
+are treated as unset. If both variables are non-empty, they must resolve to the
+same directory; otherwise commands stop before writing. Run
+`unset CLAUDE_CODE_HOME` to remove a conflicting legacy override.
+
+The `.claude.json` inside an explicitly configured directory is stored as
+`.claude-profile-home.json` in each profile, just like the default home file.
+Changing these variables does not move existing configuration or profile stores.
+
+`CLAUDE_CONFIG_DIR` does not change where profiles are stored. Keep
+one stable live directory per profile store. Give independent configurations
+separate `CLAUDE_PROFILE_HOME` values, even when used at different times: each
+store has one active profile and one original backup, and switching can otherwise
+auto-save the wrong directory into the active profile.
+
+### Upgrading with a custom config directory
+
+Older releases ignored `CLAUDE_CONFIG_DIR`, so existing profiles and the original
+backup may contain the default configuration instead of your custom one. The
+updated version never rewrites that backup. Set a fresh `CLAUDE_PROFILE_HOME`
+alongside `CLAUDE_CONFIG_DIR`, then run `claude-profile fork <name>` before
+switching profiles. This captures the custom live configuration and creates its
+own original backup. Keep the previous store for recovery.
+
+A profile from the default or legacy layout can contain both the stored home
+file and a separate payload file named `.claude.json`. Those files would collide
+inside `CLAUDE_CONFIG_DIR`, so loading that profile is refused with its files
+untouched. Use the profile with its original layout, or preserve and rename the
+payload `.claude.json` before trying again.
 
 ### Storage location resolution
 

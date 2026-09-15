@@ -5,6 +5,7 @@ REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 
 setup() {
   export HOME="$BATS_TEST_TMPDIR/home"
+  unset CLAUDE_CODE_HOME CLAUDE_CONFIG_DIR CLAUDE_PROFILE_HOME XDG_DATA_HOME ZSH ZSH_CUSTOM
   export ZDOTDIR="$HOME"
   mkdir -p "$HOME"
 
@@ -101,6 +102,67 @@ setup() {
   [[ "$output" == *"must not be inside"* ]]
   # Refused before any store was written
   [ ! -d "$CLAUDE_PROFILE_HOME/.seed" ]
+}
+
+@test "install: configures statusline in CLAUDE_CONFIG_DIR without creating default live config" {
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_CONFIG_DIR="$HOME/custom claude"
+
+  run bash "$REPO_DIR/install.sh"
+
+  [ "$status" -eq 0 ]
+  [ -f "$CLAUDE_CONFIG_DIR/settings.json" ]
+  grep -q 'statusLine' "$CLAUDE_CONFIG_DIR/settings.json"
+  [ ! -e "$HOME/.claude" ]
+  [ ! -e "$HOME/.claude.json" ]
+}
+
+@test "install: rejects conflicting config variables before installing any files" {
+  export CLAUDE_CONFIG_DIR="$HOME/official"
+  export CLAUDE_CODE_HOME="$HOME/legacy"
+  export CLAUDE_PROFILE_HOME="$HOME/profiles"
+
+  run bash "$REPO_DIR/install.sh"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CLAUDE_CONFIG_DIR"* ]]
+  [[ "$output" == *"CLAUDE_CODE_HOME"* ]]
+  [[ "$output" == *"unset CLAUDE_CODE_HOME"* ]]
+  [ ! -e "$CLAUDE_PROFILE_INSTALL_DIR" ]
+  [ ! -e "$CLAUDE_PROFILE_HOME" ]
+  [ ! -e "$CLAUDE_CONFIG_DIR" ]
+  [ ! -e "$CLAUDE_CODE_HOME" ]
+  [ -z "$(find "$CLAUDE_PROFILE_COMPLETIONS_DIR" -type f -print)" ]
+}
+
+@test "install: accepts config variables naming the same directory through a symlink" {
+  export CLAUDE_CONFIG_DIR="$HOME/official"
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  export CLAUDE_CODE_HOME="$HOME/alias"
+  ln -s "$CLAUDE_CONFIG_DIR" "$CLAUDE_CODE_HOME"
+
+  run bash "$REPO_DIR/install.sh"
+
+  [ "$status" -eq 0 ]
+  [ -f "$CLAUDE_CONFIG_DIR/settings.json" ]
+  [ -L "$CLAUDE_CODE_HOME" ]
+  [ ! -e "$HOME/.claude" ]
+}
+
+@test "install: rejects profile store inside CLAUDE_CONFIG_DIR before installing any files" {
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_CONFIG_DIR="$HOME/official"
+  export CLAUDE_PROFILE_HOME="$CLAUDE_CONFIG_DIR/profiles"
+
+  run bash "$REPO_DIR/install.sh"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must not be inside"* ]]
+  [[ "$output" == *"update CLAUDE_PROFILE_HOME"* ]]
+  [ ! -e "$CLAUDE_PROFILE_INSTALL_DIR" ]
+  [ ! -e "$CLAUDE_PROFILE_HOME" ]
+  [ ! -e "$CLAUDE_CONFIG_DIR" ]
+  [ -z "$(find "$CLAUDE_PROFILE_COMPLETIONS_DIR" -type f -print)" ]
 }
 
 @test "installs completions to COMPLETIONS_DIR" {

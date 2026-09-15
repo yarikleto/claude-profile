@@ -194,6 +194,7 @@ cmd_use() {
     # The live config is gone (e.g. an interrupted switch) but the profile
     # still holds it — reload instead of pretending all is well.
     warn "Live config is empty — reloading $(_pname "$name")"
+    _validate_profile_for_load "$profile_dir" || return 1
     _set_op_marker "use $name"
     _load_profile_to_live "$profile_dir" --move
     _clear_op_marker
