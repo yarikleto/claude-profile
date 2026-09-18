@@ -165,6 +165,21 @@ setup() {
   [ -z "$(find "$CLAUDE_PROFILE_COMPLETIONS_DIR" -type f -print)" ]
 }
 
+@test "install: refuses a store bound to another configuration before installing files" {
+  git config --global user.name test
+  git config --global user.email test@test
+  export CLAUDE_CONFIG_DIR="$HOME/work-config"
+  export CLAUDE_PROFILE_HOME="$HOME/work-store"
+  run_cli_ok new work
+  unset CLAUDE_CONFIG_DIR
+  run bash "$REPO_DIR/install.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"different live configuration"* ]]
+  [[ "$output" == *"separate CLAUDE_PROFILE_HOME"* ]]
+  [ ! -e "$CLAUDE_PROFILE_INSTALL_DIR" ]
+  [ ! -e "$HOME/.claude" ]
+}
+
 @test "installs completions to COMPLETIONS_DIR" {
   run bash "$REPO_DIR/install.sh"
   [ "$status" -eq 0 ]

@@ -264,9 +264,7 @@ cmd_restore() {
     err "Could not prepare $ref — rollback not started; current state was saved"
     exit 1
   fi
-  if [[ "$(get_current)" == "$name" ]]; then
-    _restore_assert_live_layout "$profile_dir" "$target_tree" || return 1
-  fi
+  _restore_assert_live_layout "$profile_dir" "$target_tree" || return 1
 
   # Apply the filtered tree without putting ignored session roots through
   # read-tree's worktree update, which may delete ignored directories. If Git

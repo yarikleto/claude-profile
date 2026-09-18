@@ -17,6 +17,143 @@ assert_default_untouched() {
   cmp "$HOME/.claude/settings.json" "$HOME/default-canary.json"
 }
 
+prepare_dangling_json_recovery() {
+  local live_dir="${CLAUDE_CONFIG_DIR:-$CLAUDE_CODE_HOME}"
+  local json_file="$HOME/.claude.json" f
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+    json_file="$CLAUDE_CONFIG_DIR/.claude.json"
+  fi
+  mkdir -p "$live_dir/projects/proj"
+  echo transcript > "$live_dir/projects/proj/session.jsonl"
+  run_cli_ok fork P
+  run_cli_ok new Q
+  run_cli_ok use P
+  for f in "$live_dir"/* "$live_dir"/.[!.]*; do
+    if [[ "$f" != "$json_file" && -e "$f" ]]; then
+      mv "$f" "$(profile_dir P)/"
+    fi
+  done
+  rm "$json_file"
+  ln -s "$HOME/missing-json" "$json_file"
+}
+
+assert_swept_profile_preserved() {
+  printf 'op=use\nphase=saving\nsource=P\ntarget=Q\n' > "$CLAUDE_PROFILE_HOME/.op-in-progress"
+  local before
+  before="$(git -C "$(profile_dir P)" rev-parse HEAD)"
+  run_cli_ok use Q
+  [ "$(cat "$(profile_dir P)/projects/proj/session.jsonl")" = transcript ]
+  [ -f "$(profile_dir P)/settings.json" ]
+  [ -f "$(profile_dir P)/.claude-profile-home.json" ]
+  [ "$(git -C "$(profile_dir P)" rev-parse HEAD)" = "$before" ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.op-in-progress" ]
+}
+
+@test "recovery: dangling home JSON does not erase the swept-back profile" {
+  prepare_dangling_json_recovery
+  assert_swept_profile_preserved
+}
+
+@test "recovery: dangling relocated JSON does not erase the swept-back profile" {
+  use_config_dir
+  prepare_dangling_json_recovery
+  assert_swept_profile_preserved
+  assert_default_untouched
+}
+
+@test "recovery: dangling home JSON still allows reloading lost live files" {
+  prepare_dangling_json_recovery
+  run_cli_ok use P
+  [ "$(cat "$CLAUDE_CODE_HOME/projects/proj/session.jsonl")" = transcript ]
+  [ -f "$CLAUDE_CODE_HOME/settings.json" ]
+  [ -f "$HOME/.claude.json" ]
+  [ ! -L "$HOME/.claude.json" ]
+}
+
+@test "recovery: dangling relocated JSON still allows reloading lost live files" {
+  use_config_dir
+  prepare_dangling_json_recovery
+  run_cli_ok use P
+  [ "$(cat "$CLAUDE_CONFIG_DIR/projects/proj/session.jsonl")" = transcript ]
+  [ -f "$CLAUDE_CONFIG_DIR/settings.json" ]
+  [ -f "$CLAUDE_CONFIG_DIR/.claude.json" ]
+  [ ! -L "$CLAUDE_CONFIG_DIR/.claude.json" ]
+  assert_default_untouched
+}
+
+@test "config dir: collision advice names both JSON sources and the live destination" {
+  use_config_dir
+  run_cli_ok fork original
+  run_cli_ok new other
+  echo work-account > "$(profile_dir original)/.claude.json"
+  echo personal-account > "$(profile_dir original)/.claude-profile-home.json"
+  run_cli use original
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$(profile_dir original)/.claude.json"* ]]
+  [[ "$output" == *"$(profile_dir original)/.claude-profile-home.json"* ]]
+  [[ "$output" == *"$CLAUDE_CONFIG_DIR/.claude.json"* ]]
+  [[ "$output" == *"JSON that would be loaded"* ]]
+  [[ "$output" == *"migrating-stores-with-two-json-files"* ]]
+  [[ "$output" != *"rename its payload"* ]]
+  [ "$(cat "$(profile_dir original)/.claude.json")" = work-account ]
+  [ "$(cat "$(profile_dir original)/.claude-profile-home.json")" = personal-account ]
+}
+
+@test "config dir: saving an incompatible profile preserves both stored JSON files" {
+  use_config_dir
+  run_cli_ok fork original
+  echo old-account > "$(profile_dir original)/.claude.json"
+  echo live-edit > "$CLAUDE_CONFIG_DIR/settings.json"
+  local before
+  before="$(git -C "$(profile_dir original)" rev-parse HEAD)"
+  run_cli save
+  [ "$status" -ne 0 ]
+  [[ "$output" == *".claude.json"*"conflict"* ]]
+  [ "$(cat "$(profile_dir original)/.claude.json")" = old-account ]
+  grep -q original "$(profile_dir original)/settings.json"
+  [ "$(cat "$CLAUDE_CONFIG_DIR/settings.json")" = live-edit ]
+  [ "$(git -C "$(profile_dir original)" rev-parse HEAD)" = "$before" ]
+}
+
+@test "config dir: auto-save refuses an incompatible source before moving live files" {
+  use_config_dir
+  run_cli_ok fork original
+  run_cli_ok new other
+  run_cli_ok use original
+  echo old-account > "$(profile_dir original)/.claude.json"
+  local command
+  for command in 'new clean' 'use other' 'deactivate'; do
+    run_cli $command
+    [ "$status" -ne 0 ]
+    [[ "$output" == *".claude.json"*"conflict"* ]]
+    [ ! -e "$CLAUDE_PROFILE_HOME/.op-in-progress" ]
+    [ "$(cat "$CLAUDE_PROFILE_HOME/.current")" = original ]
+    grep -q original "$CLAUDE_CONFIG_DIR/settings.json"
+    [ "$(cat "$(profile_dir original)/.claude.json")" = old-account ]
+  done
+}
+
+@test "config dir: inactive restore refuses a revision that would make the profile unloadable" {
+  use_config_dir
+  run_cli_ok fork original
+  local dir ref before
+  dir="$(profile_dir original)"
+  echo old-account > "$dir/.claude.json"
+  git -C "$dir" add .claude.json
+  git -C "$dir" commit -q -m old-layout
+  ref="$(git -C "$dir" rev-parse HEAD)"
+  git -C "$dir" rm -q .claude.json
+  git -C "$dir" commit -q -m current-layout
+  run_cli_ok new other
+  before="$(git -C "$dir" rev-parse HEAD)"
+  run_cli restore original "$ref"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *".claude.json"*"conflict"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$before" ]
+  [ ! -e "$dir/.claude.json" ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.op-in-progress" ]
+}
+
 @test "config dir: test helper clears inherited official config paths" {
   run env CLAUDE_CONFIG_DIR="$HOME/outside-test" bash -c '
     source "$1"
@@ -332,4 +469,42 @@ SH
   run_cli_ok help
   [[ "$output" == *"$CLAUDE_CONFIG_DIR"* ]]
   [[ "$output" == *"$CLAUDE_CONFIG_DIR/.claude.json"* ]]
+}
+
+@test "config dir: refuses the home directory and its ancestors before creating a store" {
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_PROFILE_HOME="$BATS_TEST_TMPDIR/store"
+  local path
+  for path in "$HOME" "$HOME/.." "$HOME/not-created/.." /; do
+    export CLAUDE_CONFIG_DIR="$path"
+    run_cli new rejected
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Unsafe live config directory"* ]]
+    [ ! -e "$CLAUDE_PROFILE_HOME" ]
+    grep -q github "$HOME/.claude.json"
+  done
+}
+
+@test "config dir: refuses a symlink to the home directory" {
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_PROFILE_HOME="$BATS_TEST_TMPDIR/store"
+  ln -s "$HOME" "$BATS_TEST_TMPDIR/home-alias"
+  export CLAUDE_CONFIG_DIR="$BATS_TEST_TMPDIR/home-alias"
+  run_cli new rejected
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unsafe live config directory"* ]]
+  [ ! -e "$CLAUDE_PROFILE_HOME" ]
+}
+
+@test "config dir: relative official paths cannot switch the current project" {
+  unset CLAUDE_CODE_HOME
+  mkdir -p "$HOME/project"
+  echo project-source > "$HOME/project/main.go"
+  cd "$HOME/project"
+  export CLAUDE_CONFIG_DIR=.
+  run_cli new rejected
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CLAUDE_CONFIG_DIR must be an absolute path"* ]]
+  [ "$(cat main.go)" = project-source ]
+  [ ! -e "$CLAUDE_PROFILE_HOME" ]
 }

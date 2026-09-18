@@ -23,6 +23,8 @@ fi
 # Use the same live paths and safety checks as the installed CLI, before any
 # installation or completion writes can leave a conflicting setup behind.
 source "$SCRIPT_DIR/lib/config.sh"
+source "$SCRIPT_DIR/lib/state.sh"
+_assert_store_live_paths || exit 1
 
 info "Installing from $SCRIPT_DIR..."
 

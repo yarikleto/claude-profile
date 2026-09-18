@@ -85,7 +85,7 @@ _assert_live_has_no_broken_symlinks() {
 # ~/.claude.json exists, or live ~/.claude/ contains any entry (dotfiles
 # included) other than the skipped git metadata.
 _live_state_nonempty() {
-  if [[ -L "$CLAUDE_JSON_FILE" || -e "$CLAUDE_JSON_FILE" ]]; then
+  if [[ -e "$CLAUDE_JSON_FILE" ]]; then
     return 0
   fi
   local f
@@ -216,14 +216,15 @@ _save_current_to() {
   local msg="${2:-Auto-save}"
   local move="${3:-}"
   _assert_profile_path_safe "$dst"
+  _assert_profile_json_layout "$dst" || return 1
+  if [[ "$move" != "--move" ]]; then
+    _assert_live_has_no_broken_symlinks || return 1
+  fi
   mkdir -p "$dst"
   # An empty live state is never worth snapshotting — after an interrupted
   # switch, saving it would propagate deletions into a still-complete profile.
   if ! _live_state_nonempty; then
     return 0
-  fi
-  if [[ "$move" != "--move" ]]; then
-    _assert_live_has_no_broken_symlinks || return 1
   fi
   # Clean staging left by an earlier interrupted copy. It lives at the store
   # root, not in the profile payload — see _staging_dir.
@@ -235,8 +236,8 @@ _save_current_to() {
   # dir is empty and this would wipe the entries just moved.
   for f in "$dst"/* "$dst"/.*; do
     base="$(basename "$f")"
-    # The reserved home file is skipped here (handled below); a root
-    # .claude.json is now a genuine live-payload entry and propagates normally.
+    # The managed JSON is handled below; incompatible stored payload JSON was
+    # rejected before any snapshot changes.
     if _skip_entry "$base"; then
       continue
     fi
@@ -323,12 +324,8 @@ _sweep_live_entries_to() {
   fi
 }
 
-# Materialize valid profile symlinks, then verify the profile is safe to load.
-# Call this BEFORE any destructive operations (like --move save).
-_validate_profile_for_load() {
+_assert_profile_json_layout() {
   local profile_dir="$1"
-  _assert_profile_path_safe "$profile_dir"
-
   # A default-layout payload .claude.json and the managed JSON cannot share
   # one relocated path. Refuse before saving/moving any live files.
   if [[ "$CLAUDE_JSON_IN_CONFIG_DIR" == true &&
@@ -336,10 +333,24 @@ _validate_profile_for_load() {
     if [[ "$(_read_store_format)" -ge 2 ||
           "$(_profile_home_json_read "$profile_dir")" != "$profile_dir/.claude.json" ]]; then
       err "Profile payload .claude.json conflicts with the managed JSON at $CLAUDE_JSON_FILE"
-      err "Use this profile with its original config layout, or rename its payload .claude.json before switching"
+      err "Payload JSON: $profile_dir/.claude.json"
+      err "JSON that would be loaded: $profile_dir/$CLAUDE_HOME_JSON -> $CLAUDE_JSON_FILE"
+      if [[ ! -e "$profile_dir/$CLAUDE_HOME_JSON" ]]; then
+        err "The managed JSON is missing; it must be chosen before this profile can be loaded"
+      fi
+      err "Preserve both files and identify the intended account before converting this profile"
+      err "See https://github.com/yarikleto/claude-profile/blob/main/docs/configuration.md#migrating-stores-with-two-json-files"
       return 1
     fi
   fi
+}
+
+# Materialize valid profile symlinks, then verify the profile is safe to load.
+# Call this BEFORE any destructive operations (like --move save).
+_validate_profile_for_load() {
+  local profile_dir="$1"
+  _assert_profile_path_safe "$profile_dir"
+  _assert_profile_json_layout "$profile_dir" || return 1
 
   # Stored symlinks can come from an interrupted move-mode switch.
   _repair_profile_symlinks "$profile_dir" || return 1

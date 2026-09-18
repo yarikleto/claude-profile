@@ -38,6 +38,44 @@ get_current_validated() {
 set_current() { echo "$1" > "$CURRENT_FILE"; }
 clear_current() { rm -f "$CURRENT_FILE"; }
 
+_assert_store_live_paths() {
+  if [[ ! -e "$STORE_LIVE_PATHS_FILE" && ! -L "$STORE_LIVE_PATHS_FILE" ]]; then
+    return 0
+  fi
+  if [[ -L "$STORE_LIVE_PATHS_FILE" || ! -f "$STORE_LIVE_PATHS_FILE" ]]; then
+    err "Invalid live configuration binding: $STORE_LIVE_PATHS_FILE"
+    return 1
+  fi
+  if ! cmp -s "$STORE_LIVE_PATHS_FILE" \
+      <(printf '%s\0%s\0' "$_CANON_CLAUDE_DIR" "$_CANON_CLAUDE_JSON_FILE"); then
+    err "Profile store ($PROFILES_DIR) is bound to a different live configuration, or its .live-paths file is invalid
+Selected directory: $_CANON_CLAUDE_DIR
+Selected JSON: $_CANON_CLAUDE_JSON_FILE
+Use this store's original config paths, or choose a separate CLAUDE_PROFILE_HOME"
+    return 1
+  fi
+}
+
+# Called under the store lock before its first write. Atomic publication keeps
+# a crash from leaving a partial binding; NUL separators preserve unusual paths.
+_ensure_store_live_paths() {
+  _assert_store_live_paths || return 1
+  if [[ -f "$STORE_LIVE_PATHS_FILE" ]]; then
+    return 0
+  fi
+  local tmp
+  if ! tmp="$(mktemp "$PROFILES_DIR/.live-paths.XXXXXX")"; then
+    err "Could not record the store's live configuration paths"
+    return 1
+  fi
+  if ! printf '%s\0%s\0' "$_CANON_CLAUDE_DIR" "$_CANON_CLAUDE_JSON_FILE" > "$tmp" ||
+     ! mv "$tmp" "$STORE_LIVE_PATHS_FILE"; then
+    rm -f "$tmp"
+    err "Could not record the store's live configuration paths"
+    return 1
+  fi
+}
+
 # Concurrent invocations interleave rm/mv on the same live files; with --move
 # semantics that can destroy the sole copy of a profile's data.
 

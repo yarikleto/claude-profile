@@ -4,7 +4,8 @@ There are three layers to remove: your Claude Code configuration (profiles data)
 
 ## Step 1: Restore your original Claude Code configuration
 
-Deactivate to restore your original `~/.claude/` state:
+Run this with the same `CLAUDE_CONFIG_DIR` and `CLAUDE_PROFILE_HOME` used for
+the profiles to restore the original configuration:
 
 ```bash
 claude-profile deactivate
@@ -13,28 +14,16 @@ claude-profile deactivate
 This saves the active profile, copies your original files back from the backup, and clears the active profile marker.
 If you already detached with `deactivate --keep`, the same command restores the original backup; if your detached live config changed, it is first saved as a generated `detached-...` profile.
 
-**If `claude-profile` is no longer installed**, restore manually:
+**If `claude-profile` is no longer installed**, reinstall it and run `deactivate`
+for an exact restore. For selected-file recovery, follow
+[manual file recovery](migration.md#manual-file-recovery), using
+`.pre-profiles-backup` as the saved directory. Those steps resolve both live
+paths and preserve the current files before copying. A custom directory's
+account JSON belongs inside that directory; leave any unrelated
+`$HOME/.claude.json` alone.
 
-```bash
-# Copy everything from the backup — the trailing /. includes dotfiles
-# (e.g. .credentials.json), which a bare * glob would skip
-mkdir -p ~/.claude
-cp -R ~/.local/share/claude-profile/.pre-profiles-backup/. ~/.claude/
-# The reserved file represents the home-level ~/.claude.json
-rm -f ~/.claude.json
-if [[ -f ~/.claude/.claude-profile-home.json ]]; then
-  mv -f ~/.claude/.claude-profile-home.json ~/.claude.json
-fi
-rm -f ~/.local/share/claude-profile/.current
-```
-
-Not every file will exist — errors about missing ones are fine.
-
-An unmigrated backup created before store format 2 may keep the home-level file
-as `.claude.json` instead. Only for that legacy layout, and only when
-`.claude-profile-home.json` is absent, move `~/.claude/.claude.json` to
-`~/.claude.json`. In a current backup it can be a real payload file and must
-remain inside `~/.claude/`.
+Older backups with a payload `.claude.json` need
+[explicit JSON selection in a copy](configuration.md#migrating-stores-with-two-json-files).
 
 ## Step 2: Remove the CLI
 
@@ -70,7 +59,9 @@ CLAUDE_PROFILE_INSTALL_DIR=~/bin bash uninstall.sh
 
 ## Step 3: Remove profile data
 
-Profiles live entirely inside `~/.local/share/claude-profile/`:
+The default store is `~/.local/share/claude-profile/`. If you used
+`CLAUDE_PROFILE_HOME` or `XDG_DATA_HOME`, remove only that selected store after
+recovery; the following example is for the default store:
 
 ```bash
 rm -rf ~/.local/share/claude-profile

@@ -29,7 +29,8 @@ load test_helper
   stored_name="$(sed -n 's/^CLAUDE_HOME_JSON="\([^"]*\)"/\1/p' "$repo_root/lib/config.sh")"
 
   [ -n "$stored_name" ]
-  grep -F "YOUR_PROFILE/$stored_name ~/.claude.json" "$repo_root/docs/migration.md"
+  grep -F 'live_json="$live_dir/.claude.json"' "$repo_root/docs/migration.md"
+  grep -F '"$saved_dir/.claude-profile-home.json" "$live_json"' "$repo_root/docs/migration.md"
   grep -F "$stored_name" "$repo_root/docs/configuration.md" \
     | grep -F 'stored copy of ~/.claude.json'
   grep -F "$stored_name" "$repo_root/docs/configuration.md" \
@@ -38,10 +39,52 @@ load test_helper
     | grep -Fc 'stored copy of ~/.claude.json')" -eq 2 ]
   grep -F '.claude.json                        # template for ~/.claude.json' \
     "$repo_root/docs/architecture.md"
-  grep -F "$stored_name" "$repo_root/docs/uninstall.md"
-  grep -F 'rm -f ~/.claude.json' "$repo_root/docs/uninstall.md"
+  grep -F 'migration.md#manual-file-recovery' "$repo_root/docs/uninstall.md"
+  ! grep -F 'rm -f ~/.claude.json' "$repo_root/docs/uninstall.md"
 
   ! grep -F "YOUR_PROFILE/.claude.json ~/.claude.json" "$repo_root/docs/migration.md"
   ! grep -F 'stored as `.claude.json` inside each profile directory' "$repo_root/docs/architecture.md"
   ! grep -E '^[[:space:]]*mv -f ~/\.claude/\.claude\.json ~/\.claude\.json' "$repo_root/docs/uninstall.md"
+}
+
+run_documented_recovery() {
+  local repo_root script="$BATS_TEST_TMPDIR/manual-recovery.sh"
+  repo_root="$(dirname "$CLAUDE_PROFILE")"
+  awk '/<!-- BEGIN manual-file-recovery -->/{copy=1;next} /<!-- END manual-file-recovery -->/{copy=0} copy && !/^```/{print}' \
+    "$repo_root/docs/migration.md" | sed 's/YOUR_PROFILE/original/g' > "$script"
+  [ -s "$script" ]
+  run env TMPDIR="$BATS_TEST_TMPDIR" bash "$script"
+  [ "$status" -eq 0 ]
+}
+
+@test "docs: manual recovery restores default settings and account JSON" {
+  run_cli_ok fork original
+  run_cli_ok new clean
+  run_documented_recovery
+  cmp "$CLAUDE_CODE_HOME/settings.json" "$(profile_dir original)/settings.json"
+  cmp "$HOME/.claude.json" "$(profile_dir original)/.claude-profile-home.json"
+}
+
+@test "docs: manual recovery uses relocated paths without touching the default account" {
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_CONFIG_DIR="$HOME/work"
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  echo work-settings > "$CLAUDE_CONFIG_DIR/settings.json"
+  echo work-account > "$CLAUDE_CONFIG_DIR/.claude.json"
+  run_cli_ok fork original
+  run_cli_ok new clean
+  run_documented_recovery
+  [ "$(cat "$CLAUDE_CONFIG_DIR/settings.json")" = work-settings ]
+  [ "$(cat "$CLAUDE_CONFIG_DIR/.claude.json")" = work-account ]
+  grep -q github "$HOME/.claude.json"
+  grep -q effortLevel "$HOME/.claude/settings.json"
+}
+
+@test "docs: ambiguous legacy JSON migration preserves both source files" {
+  local doc="$(dirname "$CLAUDE_PROFILE")/docs/configuration.md"
+  grep -F '### Migrating stores with two JSON files' "$doc"
+  grep -F 'real account JSON' "$doc"
+  grep -F 'fresh store' "$doc"
+  grep -F 'original store and its backup' "$doc"
+  ! grep -F 'rename the' "$doc"
 }

@@ -45,17 +45,23 @@ esac
 # created is stamped too. Read-only commands migrate only on a free lock (so
 # list/history stay usable mid-write) and release it, or a pager blocks writes.
 if [[ "$command_mutates" == true ]]; then
+  _assert_store_live_paths || exit 1
   _acquire_lock
+  _refuse_newer_store_format_for_write
+  _ensure_store_live_paths || exit 1
   if _store_needs_migration; then
     _migrate_store_format || true
   fi
-  _refuse_newer_store_format_for_write
-elif _store_needs_migration; then
+elif _store_needs_migration && _assert_store_live_paths >/dev/null 2>&1; then
   if _try_acquire_lock; then
     _migrate_store_format || true
     _release_lock
   fi
 fi
+
+case "$cmd" in
+  show|info|diff) _assert_store_live_paths || exit 1 ;;
+esac
 
 case "$cmd" in
   new)            cmd_new "$@" ;;

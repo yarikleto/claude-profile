@@ -109,8 +109,13 @@ write; conflicts advise unsetting `CLAUDE_CODE_HOME`.
 The store location is independent of the live directory. Each store needs one
 stable live directory: independent configurations need separate
 `CLAUDE_PROFILE_HOME` values even when used sequentially, because the active
-marker and original backup belong to the store. Reusing a store can auto-save
-the wrong live directory into its active profile. Path overrides do not migrate
+marker and original backup belong to the store. `.live-paths` atomically records
+the canonical directory and JSON location on the first write, using two
+NUL-separated paths. Writers check it before locking and again under the lock,
+before migrations. Live `show` and `diff` also require a match; a mismatched
+read-only command does not run migrations. The JSON parent is canonicalized
+without following the final file symlink, which saves may materialize. Old
+unbound stores adopt the selected paths on their next write. Path overrides do not migrate
 existing live files or stores or replace the original backup; upgrades from a
 release that ignored `CLAUDE_CONFIG_DIR` should capture that custom configuration
 with `fork` in a fresh store before switching.
@@ -132,8 +137,10 @@ name.
 
 Loading a default-layout profile into `CLAUDE_CONFIG_DIR` refuses a payload
 `.claude.json`: it would collide with the resolved home file. The profile remains
-untouched and can be used in its original layout or after preserving and renaming
-that payload file.
+untouched. The same check applies before saves and history restore, including
+inactive profiles. The two JSON sources must be preserved and explicitly
+converted in a copy; older custom-directory stores may have their real account
+in the payload file. See [migration guidance](configuration.md#migrating-stores-with-two-json-files).
 
 ## Full-directory snapshots
 

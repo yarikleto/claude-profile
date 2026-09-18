@@ -2,6 +2,10 @@
 
 When Claude Code adds native profile support, follow these steps to migrate without losing any data.
 
+Run commands with the same `CLAUDE_CONFIG_DIR` and `CLAUDE_PROFILE_HOME` used
+for your profiles. Paths elsewhere in this guide show the defaults; custom
+directories keep their account JSON at `$CLAUDE_CONFIG_DIR/.claude.json`.
+
 ## Quick migration
 
 ```bash
@@ -101,24 +105,67 @@ mv ~/.claude/__profiles__ ~/.local/share/claude-profile
 
 **I ran `deactivate` (without --keep) and lost my config:**
 
-Your profile is still saved. Find it and copy the files back. In the current
-store format, the home-level `~/.claude.json` uses a reserved filename inside
-the profile so it cannot collide with a payload file named
-`~/.claude/.claude.json`:
+Your profile is still saved. Reattach it with `claude-profile use <name>` using
+the same config and store variables, or follow the selected-file recovery below.
 
+## Manual file recovery
+
+Close Claude Code and detach from profiles before changing live files manually.
+Select the store and live directory you intend to recover. Replace `YOUR_PROFILE`
+below with a saved profile name, or `.pre-profiles-backup` for the original
+backup. The snippet preserves the current live files and recovers settings plus
+the managed account JSON. It does not remove extra live files or restore session
+history; reinstall the CLI and use `deactivate` for an exact backup restore.
+
+If either JSON file belongs to a different account, follow
+[the JSON migration steps](configuration.md#migrating-stores-with-two-json-files)
+to prepare a copy first. Do not choose an account solely from its filename.
+
+<!-- BEGIN manual-file-recovery -->
 ```bash
-ls ~/.local/share/claude-profile/
-# Find your profile name, then:
-cp ~/.local/share/claude-profile/YOUR_PROFILE/settings.json ~/.claude/settings.json
-cp ~/.local/share/claude-profile/YOUR_PROFILE/.claude-profile-home.json ~/.claude.json
-# ... etc for other files you need
+(
+  set -e
+  umask 077
+  profile_store="${CLAUDE_PROFILE_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-profile}"
+  live_dir="${CLAUDE_CODE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
+  live_json="$HOME/.claude.json"
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+    live_json="$live_dir/.claude.json"
+  fi
+  saved_dir="$profile_store/YOUR_PROFILE"
+  test -d "$saved_dir"
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" && -e "$saved_dir/.claude.json" ]]; then
+    echo 'Choose the intended account JSON using the migration steps before recovering files.' >&2
+    exit 1
+  fi
+  recovery_dir="$(mktemp -d "${TMPDIR:-/tmp}/claude-profile-manual.XXXXXX")"
+  if [[ -d "$live_dir" ]]; then
+    cp -RL "$live_dir" "$recovery_dir/live"
+  fi
+  if [[ -f "$live_json" ]]; then
+    cp -Lp "$live_json" "$recovery_dir/account.json"
+  fi
+  printf 'Current files preserved in %s\n' "$recovery_dir"
+  mkdir -p "$live_dir"
+  if [[ -f "$saved_dir/settings.json" ]]; then
+    cp -p "$saved_dir/settings.json" "$live_dir/settings.json"
+  fi
+  if [[ -f "$saved_dir/.claude-profile-home.json" ]]; then
+    cp -p "$saved_dir/.claude-profile-home.json" "$live_json"
+  else
+    echo 'No managed account JSON in this snapshot; the live JSON was left unchanged.'
+  fi
+)
 ```
+<!-- END manual-file-recovery -->
 
 An unmigrated store created before format 2 may instead keep the home-level
 file at `YOUR_PROFILE/.claude.json`. Use that legacy path only when
 `.claude-profile-home.json` is absent and you know the store predates format 2.
-In a current store, the root `.claude.json` can be the distinct payload file
-that belongs at `~/.claude/.claude.json`.
+With default paths in a current store, the root `.claude.json` can be the
+distinct payload file that belongs at `~/.claude/.claude.json`. Older relocated
+stores can instead have their real account JSON there; use the explicit JSON
+migration steps above to preserve both sources and select the correct one.
 
 **I deleted the profiles directory and need my backup:**
 

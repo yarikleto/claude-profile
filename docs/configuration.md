@@ -200,6 +200,9 @@ live directory and the separate file stays at `$HOME/.claude.json`. Empty values
 are treated as unset. If both variables are non-empty, they must resolve to the
 same directory; otherwise commands stop before writing. Run
 `unset CLAUDE_CODE_HOME` to remove a conflicting legacy override.
+`CLAUDE_CONFIG_DIR` must be an absolute path. The live directory must be a
+dedicated configuration directory; `/`, your home directory, and its ancestors
+are refused, including aliases through symlinks.
 
 The `.claude.json` inside an explicitly configured directory is stored as
 `.claude-profile-home.json` in each profile, just like the default home file.
@@ -208,8 +211,13 @@ Changing these variables does not move existing configuration or profile stores.
 `CLAUDE_CONFIG_DIR` does not change where profiles are stored. Keep
 one stable live directory per profile store. Give independent configurations
 separate `CLAUDE_PROFILE_HOME` values, even when used at different times: each
-store has one active profile and one original backup, and switching can otherwise
-auto-save the wrong directory into the active profile.
+store has one active profile and one original backup. On the first write, the
+store records the canonical directory and JSON location in `.live-paths`.
+Later writes, installation, and live-file inspection refuse a mismatch before
+changing configuration. `list` and `history` remain available for inspection.
+Equivalent directory aliases work, and replacing a JSON symlink does not change
+the binding. Existing stores without this metadata adopt the paths selected on
+their first write after upgrading; their old location cannot be inferred.
 
 ### Upgrading with a custom config directory
 
@@ -220,11 +228,36 @@ alongside `CLAUDE_CONFIG_DIR`, then run `claude-profile fork <name>` before
 switching profiles. This captures the custom live configuration and creates its
 own original backup. Keep the previous store for recovery.
 
-A profile from the default or legacy layout can contain both the stored home
-file and a separate payload file named `.claude.json`. Those files would collide
-inside `CLAUDE_CONFIG_DIR`, so loading that profile is refused with its files
-untouched. Use the profile with its original layout, or preserve and rename the
-payload `.claude.json` before trying again.
+### Migrating stores with two JSON files
+
+Some older stores contain the real account JSON at `PROFILE/.claude.json`,
+while `PROFILE/.claude-profile-home.json` contains an unused or different
+account's home file, or is absent. This can happen when `CLAUDE_CONFIG_DIR` was
+`$HOME/.claude` (including devcontainers), or when `CLAUDE_CODE_HOME` matched the
+custom directory under an older version.
+
+The two names do not tell you which account is intended. The conflict message
+prints both paths and the managed source that would be loaded. Inspect those
+files locally and identify the intended account and MCP servers before making a
+choice. Simply moving the payload aside can leave the wrong account selected.
+
+1. Keep the original store and its backup intact. Use a fresh store with the
+   intended `CLAUDE_CONFIG_DIR`, then `fork before-recovery` to preserve the
+   current live configuration there.
+2. Copy the old profile directory into that fresh store under a new, unused
+   profile name. Preserve separate copies of both JSON files outside the copied
+   profile, including the existing `.claude-profile-home.json` if it exists.
+3. If `.claude.json` is the real account JSON, move it to
+   `.claude-profile-home.json` **in the copied profile**, replacing only the
+   already-preserved managed copy. The copied profile must no longer have a
+   root `.claude.json` entry. If the managed file is the intended account JSON,
+   keep it and move the unrelated payload to your recovery copies instead.
+4. Run `claude-profile use <copied-profile>` with that fresh store and the same
+   config-directory setting. Check the account and MCP servers in Claude Code.
+
+Saves, switches, and history restores refuse incompatible JSON layouts so they
+cannot silently discard one source. An original backup with this conflict needs
+the same recovery through a copy; do not edit the original backup in place.
 
 ### Storage location resolution
 

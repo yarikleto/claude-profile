@@ -115,14 +115,9 @@ fi
 # If that object changes shape, fail safely instead of displaying a
 # display_name that belongs to some other object in the payload.
 model="${model:-Claude}"
-# Resolve profiles dir: CLAUDE_PROFILE_HOME > XDG_DATA_HOME > default
-if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
-  _profiles_dir="$CLAUDE_PROFILE_HOME"
-elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
-  _profiles_dir="$XDG_DATA_HOME/claude-profile"
-else
-  _profiles_dir="$HOME/.local/share/claude-profile"
-fi
+# The configured script belongs to this store even when Claude starts from a
+# shell with different account variables.
+_profiles_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || exit 1
 profile_file="$_profiles_dir/.current"
 if [[ -f "$profile_file" ]]; then
   profile="$(tr -cd 'a-zA-Z0-9._-' < "$profile_file")"

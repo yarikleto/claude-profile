@@ -98,6 +98,7 @@ cmd_new() {
   current="$(get_current_validated)"
   _guard_detached_live_state "$current" "$force" "$backup_preexisted"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    _assert_profile_json_layout "$PROFILES_DIR/$current" || return 1
     info "Saving profile $(_pname "$current")..."
     # Saving phase marker BEFORE the first destructive move (see cmd_use).
     _mark_op use saving "$current" "$name"
@@ -218,6 +219,7 @@ cmd_use() {
   # Mark the saving phase BEFORE the first destructive move: a crash mid-save
   # then sweeps live back to the source instead of exact-sync-deleting it.
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    _assert_profile_json_layout "$PROFILES_DIR/$current" || return 1
     info "Saving $(_pname "$current")..."
     _mark_op use saving "$current" "$name"
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'" --move
@@ -382,6 +384,7 @@ cmd_deactivate() {
     if [[ "$resume_restore" == true ]]; then
       : # live holds a partial restore — nothing of the user's to save
     elif [[ -n "$current" ]]; then
+      _assert_profile_json_layout "$PROFILES_DIR/$current" || return 1
       info "Saving $(_pname "$current")..."
       # Saving phase marker BEFORE the first destructive move (see cmd_use).
       _mark_op deactivate saving "$current" ""

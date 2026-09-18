@@ -50,6 +50,23 @@ _canonical_path() {
     [[ "$canon" == "/" ]] && canon=""
     local result="$canon$tail"
     [[ -z "$result" ]] && result="/"
+    # A missing ancestor can leave '..' in the tail. Normalize it, then resolve
+    # again so a revealed symlink cannot bypass the HOME/ancestor guard.
+    local rest="$result/" normalized="" component
+    while [[ "$rest" == */* ]]; do
+      component="${rest%%/*}"
+      rest="${rest#*/}"
+      case "$component" in
+        ''|.) ;;
+        ..) normalized="${normalized%/*}" ;;
+        *) normalized="$normalized/$component" ;;
+      esac
+    done
+    normalized="${normalized:-/}"
+    if [[ "$normalized" != "$result" ]]; then
+      _canonical_path "$normalized"
+      return
+    fi
     printf '%s\n' "$result"
   else
     printf '%s\n' "$path"
@@ -61,6 +78,19 @@ _canonical_path() {
 # backup. Compare _canonical_path output — a raw string compare misses aliases.
 _CANON_PROFILES_DIR="$(_canonical_path "$PROFILES_DIR")"
 _CANON_CLAUDE_DIR="$(_canonical_path "$CLAUDE_DIR")"
+_CANON_HOME="$(_canonical_path "$HOME")"
+# Compare the JSON's parent, not its target: saves replace a live JSON symlink
+# with a regular file without changing which configuration this store owns.
+_CANON_CLAUDE_JSON_FILE="$(_canonical_path "$(dirname "$CLAUDE_JSON_FILE")")/.claude.json"
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" && "$CLAUDE_CONFIG_DIR" != /* ]]; then
+  err "CLAUDE_CONFIG_DIR must be an absolute path to a dedicated configuration directory"
+  exit 1
+fi
+if [[ "$_CANON_CLAUDE_DIR" == / || "$_CANON_CLAUDE_DIR" == "$_CANON_HOME" ||
+      "$_CANON_HOME" == "$_CANON_CLAUDE_DIR"/* ]]; then
+  err "Unsafe live config directory ($CLAUDE_DIR): use a dedicated directory, not HOME or an ancestor of HOME"
+  exit 1
+fi
 if [[ -n "${CLAUDE_CODE_HOME:-}" && -n "${CLAUDE_CONFIG_DIR:-}" &&
       "$_CANON_CLAUDE_DIR" != "$(_canonical_path "$CLAUDE_CONFIG_DIR")" ]]; then
   err "CLAUDE_CODE_HOME ($CLAUDE_CODE_HOME) conflicts with CLAUDE_CONFIG_DIR ($CLAUDE_CONFIG_DIR)
@@ -80,6 +110,7 @@ fi
 CURRENT_FILE="$PROFILES_DIR/.current"
 OP_MARKER_FILE="$PROFILES_DIR/.op-in-progress"
 STORE_FORMAT_FILE="$PROFILES_DIR/.format"
+STORE_LIVE_PATHS_FILE="$PROFILES_DIR/.live-paths"
 STORE_FORMAT=3
 
 # Capture this before locking or command setup can create the store directory.
