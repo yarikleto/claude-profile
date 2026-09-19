@@ -96,6 +96,7 @@ cmd_statusline() {
         err "Refusing to overwrite symlink at $statusline_script"
         exit 1
       fi
+      _ensure_store_live_paths || return 1
       cat > "$statusline_script" <<'SCRIPT'
 #!/bin/bash
 input=$(cat)

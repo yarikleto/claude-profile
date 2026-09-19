@@ -1,6 +1,30 @@
 #!/usr/bin/env bats
 load test_helper
 
+@test "config dir: refused fork leaves no empty profile and can be retried" {
+  use_config_dir
+  run_cli_ok fork work
+  echo alternate-account > "$(profile_dir work)/.claude.json"
+  run_cli fork copy
+  [ "$status" -ne 0 ]
+  [ ! -e "$(profile_dir copy)" ]
+  [ "$(cat "$CLAUDE_PROFILE_HOME/.current")" = work ]
+  mv "$(profile_dir work)/.claude.json" "$HOME/preserved-alternate-account"
+  run_cli_ok fork copy
+  [ -f "$(profile_dir copy)/settings.json" ]
+}
+
+@test "config dir: fork auto-save failure leaves no empty destination" {
+  use_config_dir
+  run_cli_ok fork work
+  ln -s "$HOME/missing" "$CLAUDE_CONFIG_DIR/broken"
+  run_cli fork copy
+  [ "$status" -ne 0 ]
+  [ ! -e "$(profile_dir copy)" ]
+  rm "$CLAUDE_CONFIG_DIR/broken"
+  run_cli_ok fork copy
+}
+
 use_config_dir() {
   unset CLAUDE_CODE_HOME
   export CLAUDE_CONFIG_DIR="$HOME/custom config"

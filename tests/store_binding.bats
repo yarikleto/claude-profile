@@ -1,6 +1,85 @@
 #!/usr/bin/env bats
 load test_helper
 
+@test "store binding: legacy stores refuse relocated JSON before adoption or migration" {
+  run_cli_ok fork personal
+  run_cli_ok new other
+  rm "$CLAUDE_PROFILE_HOME/.live-paths"
+  echo 2 > "$CLAUDE_PROFILE_HOME/.format"
+  local before command
+  before="$(git -C "$(profile_dir other)" rev-parse HEAD)"
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_CONFIG_DIR="$HOME/work"
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  echo work-settings > "$CLAUDE_CONFIG_DIR/settings.json"
+  echo work-account > "$CLAUDE_CONFIG_DIR/.claude.json"
+  for command in 'use personal' 'new rejected' 'fork rejected' 'save' 'deactivate'; do
+    run_cli $command
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unbound store"* ]]
+    [[ "$output" == *"upgrading-with-a-custom-config-directory"* ]]
+    [ ! -e "$CLAUDE_PROFILE_HOME/.live-paths" ]
+    [ ! -e "$CLAUDE_PROFILE_HOME/.op-in-progress" ]
+    [ "$(cat "$CLAUDE_PROFILE_HOME/.format")" = 2 ]
+    [ "$(git -C "$(profile_dir other)" rev-parse HEAD)" = "$before" ]
+    [ "$(cat "$CLAUDE_CONFIG_DIR/.claude.json")" = work-account ]
+    [ "$(cat "$CLAUDE_CONFIG_DIR/settings.json")" = work-settings ]
+    grep -q github "$(profile_dir personal)/.claude-profile-home.json"
+    grep -q github "$(backup_dir)/.claude-profile-home.json"
+  done
+  run_cli_ok list
+  [ "$(cat "$CLAUDE_PROFILE_HOME/.format")" = 2 ]
+}
+
+@test "store binding: either a legacy backup or profile alone prevents relocated adoption" {
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_CONFIG_DIR="$HOME/work"
+  local entry
+  for entry in .pre-profiles-backup old-profile; do
+    export CLAUDE_PROFILE_HOME="$HOME/store-$entry"
+    mkdir -p "$CLAUDE_PROFILE_HOME/$entry"
+    run_cli fork rejected
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unbound store"* ]]
+    [ ! -e "$CLAUDE_PROFILE_HOME/.live-paths" ]
+    [ ! -e "$CLAUDE_PROFILE_HOME/rejected" ]
+  done
+}
+
+@test "store binding: a mistyped command does not claim a fresh store" {
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_CONFIG_DIR="$HOME/work"
+  run_cli use typo
+  [ "$status" -ne 0 ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.live-paths" ]
+  unset CLAUDE_CONFIG_DIR
+  run_cli_ok fork personal
+  [ -f "$CLAUDE_PROFILE_HOME/.live-paths" ]
+}
+
+@test "store binding: a mistyped command does not adopt an existing unbound store" {
+  run_cli_ok fork personal
+  rm "$CLAUDE_PROFILE_HOME/.live-paths"
+  run_cli use typo
+  [ "$status" -ne 0 ]
+  [ ! -e "$CLAUDE_PROFILE_HOME/.live-paths" ]
+  run_cli_ok save
+  [ -f "$CLAUDE_PROFILE_HOME/.live-paths" ]
+}
+
+@test "store binding: mismatch reports the bound and selected paths" {
+  create_work_store
+  local canonical_home
+  canonical_home="$(cd "$HOME" && pwd -P)"
+  unset CLAUDE_CONFIG_DIR
+  run_cli use work
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Bound directory: $canonical_home/work-config"* ]]
+  [[ "$output" == *"Bound JSON: $canonical_home/work-config/.claude.json"* ]]
+  [[ "$output" == *"Selected directory: $canonical_home/.claude"* ]]
+  [[ "$output" == *"Selected JSON: $canonical_home/.claude.json"* ]]
+}
+
 create_work_store() {
   unset CLAUDE_CODE_HOME
   export CLAUDE_CONFIG_DIR="$HOME/work-config"

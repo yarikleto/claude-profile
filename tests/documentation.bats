@@ -65,6 +65,19 @@ run_documented_recovery() {
   cmp "$HOME/.claude.json" "$(profile_dir original)/.claude-profile-home.json"
 }
 
+@test "docs: manual recovery preserves current files in a private persistent directory" {
+  run_cli_ok fork original
+  echo current-settings > "$CLAUDE_CODE_HOME/settings.json"
+  echo current-account > "$HOME/.claude.json"
+  run_documented_recovery
+  local recovery_dir
+  recovery_dir="$(printf '%s\n' "$output" | sed -n 's/^Current files preserved in //p')"
+  [[ "$recovery_dir" == "$HOME/"* ]]
+  [ "$(cat "$recovery_dir/live/settings.json")" = current-settings ]
+  [ "$(cat "$recovery_dir/account.json")" = current-account ]
+  [ "$(LC_ALL=C ls -ld "$recovery_dir" | cut -c1-10)" = drwx------ ]
+}
+
 @test "docs: manual recovery uses relocated paths without touching the default account" {
   unset CLAUDE_CODE_HOME
   export CLAUDE_CONFIG_DIR="$HOME/work"

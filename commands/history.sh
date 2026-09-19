@@ -230,6 +230,7 @@ cmd_restore() {
   if [[ "$(get_current)" == "$name" ]]; then
     _save_current_to "$profile_dir" "Auto-save before restore to $ref"
   else
+    _ensure_store_live_paths || return 1
     _git_commit "$profile_dir" "Auto-save before restore to $ref"
   fi
   # The rollback deletes the working tree first — proceed only if that

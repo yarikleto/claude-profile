@@ -211,13 +211,17 @@ Changing these variables does not move existing configuration or profile stores.
 `CLAUDE_CONFIG_DIR` does not change where profiles are stored. Keep
 one stable live directory per profile store. Give independent configurations
 separate `CLAUDE_PROFILE_HOME` values, even when used at different times: each
-store has one active profile and one original backup. On the first write, the
+store has one active profile and one original backup. Before storing configuration, the
 store records the canonical directory and JSON location in `.live-paths`.
 Later writes, installation, and live-file inspection refuse a mismatch before
 changing configuration. `list` and `history` remain available for inspection.
 Equivalent directory aliases work, and replacing a JSON symlink does not change
-the binding. Existing stores without this metadata adopt the paths selected on
-their first write after upgrading; their old location cannot be inferred.
+the binding. Invalid commands such as `use typo` do not create a binding.
+Existing stores without this metadata may adopt the selected paths only when
+the managed JSON remains at `$HOME/.claude.json`. Earlier releases always used
+that JSON location, even with `CLAUDE_CODE_HOME`; their directory override cannot
+be inferred. If an unbound store already has profiles or a backup and the
+selected JSON is relocated, commands refuse and point to the upgrade steps below.
 
 ### Upgrading with a custom config directory
 

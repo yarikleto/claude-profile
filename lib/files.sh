@@ -147,6 +147,7 @@ _live_state_equals_dir() {
 # Uses $PROFILES_DIR/.seed/ if it exists, otherwise falls back to built-in defaults.
 _seed_profile() {
   local dst="$1"
+  _ensure_store_live_paths || return 1
   local seed_dir="$PROFILES_DIR/.seed"
   if [[ -d "$seed_dir" ]]; then
     local f
@@ -191,6 +192,7 @@ _snapshot_current() {
   local dst="$1"
   _assert_profile_path_safe "$dst"
   _assert_live_has_no_broken_symlinks || return 1
+  _ensure_store_live_paths || return 1
   local f
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
@@ -226,6 +228,7 @@ _save_current_to() {
   if ! _live_state_nonempty; then
     return 0
   fi
+  _ensure_store_live_paths || return 1
   # Clean staging left by an earlier interrupted copy. It lives at the store
   # root, not in the profile payload — see _staging_dir.
   local staging
@@ -304,6 +307,7 @@ _save_current_to() {
 _sweep_live_entries_to() {
   local dst="$1" f base
   _assert_profile_path_safe "$dst"
+  _ensure_store_live_paths || return 1
   mkdir -p "$dst"
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     base="$(basename "$f")"
@@ -410,6 +414,7 @@ _load_profile_to_live() {
   _assert_profile_path_safe "$profile_dir"
 
   _validate_profile_for_load "$profile_dir" || return 1
+  _ensure_store_live_paths || return 1
   mkdir -p "$CLAUDE_DIR"
 
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do

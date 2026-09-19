@@ -134,8 +134,6 @@ cmd_fork() {
     err "Profile '$(_pname "$name")' already exists"; exit 1
   fi
 
-  mkdir -p "$profile_dir"
-
   local current
   current="$(get_current_validated)"
 
@@ -151,6 +149,7 @@ cmd_fork() {
   else
     info "Forking from original state..."
   fi
+  mkdir -p "$profile_dir"
   _snapshot_current "$profile_dir"
   _git_init "$profile_dir"
 

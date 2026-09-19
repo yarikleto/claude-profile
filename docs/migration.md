@@ -114,7 +114,9 @@ Close Claude Code and detach from profiles before changing live files manually.
 Select the store and live directory you intend to recover. Replace `YOUR_PROFILE`
 below with a saved profile name, or `.pre-profiles-backup` for the original
 backup. The snippet preserves the current live files and recovers settings plus
-the managed account JSON. It does not remove extra live files or restore session
+the managed account JSON. The recovery copy stays in a private directory under
+your home directory until you remove it; keep it until you verify the recovered
+configuration. It does not remove extra live files or restore session
 history; reinstall the CLI and use `deactivate` for an exact backup restore.
 
 If either JSON file belongs to a different account, follow
@@ -138,7 +140,7 @@ to prepare a copy first. Do not choose an account solely from its filename.
     echo 'Choose the intended account JSON using the migration steps before recovering files.' >&2
     exit 1
   fi
-  recovery_dir="$(mktemp -d "${TMPDIR:-/tmp}/claude-profile-manual.XXXXXX")"
+  recovery_dir="$(mktemp -d "$HOME/claude-profile-recovery.XXXXXX")"
   if [[ -d "$live_dir" ]]; then
     cp -RL "$live_dir" "$recovery_dir/live"
   fi

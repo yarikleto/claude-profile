@@ -38,8 +38,33 @@ get_current_validated() {
 set_current() { echo "$1" > "$CURRENT_FILE"; }
 clear_current() { rm -f "$CURRENT_FILE"; }
 
+_store_has_saved_state() {
+  local entry
+  for entry in "$PROFILES_DIR/.pre-profiles-backup" "$CURRENT_FILE" "$OP_MARKER_FILE"; do
+    if [[ -e "$entry" || -L "$entry" ]]; then
+      return 0
+    fi
+  done
+  for entry in "$PROFILES_DIR"/*; do
+    if [[ -d "$entry" || -L "$entry" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 _assert_store_live_paths() {
   if [[ ! -e "$STORE_LIVE_PATHS_FILE" && ! -L "$STORE_LIVE_PATHS_FILE" ]]; then
+    # Released versions always managed the home JSON, even with a directory
+    # override. Adopting a relocated JSON would mix accounts on the first use.
+    if [[ "$_CANON_CLAUDE_JSON_FILE" != "${_CANON_HOME%/}/.claude.json" ]] && _store_has_saved_state; then
+      err "Existing unbound store ($PROFILES_DIR) cannot adopt a relocated account JSON
+Earlier releases managed: ${_CANON_HOME%/}/.claude.json
+Selected JSON: $_CANON_CLAUDE_JSON_FILE
+Preserve this store and use a fresh CLAUDE_PROFILE_HOME for the custom configuration.
+See https://github.com/yarikleto/claude-profile/blob/main/docs/configuration.md#upgrading-with-a-custom-config-directory"
+      return 1
+    fi
     return 0
   fi
   if [[ -L "$STORE_LIVE_PATHS_FILE" || ! -f "$STORE_LIVE_PATHS_FILE" ]]; then
@@ -48,7 +73,14 @@ _assert_store_live_paths() {
   fi
   if ! cmp -s "$STORE_LIVE_PATHS_FILE" \
       <(printf '%s\0%s\0' "$_CANON_CLAUDE_DIR" "$_CANON_CLAUDE_JSON_FILE"); then
+    local bound_dir bound_json
+    if ! { IFS= read -r -d '' bound_dir && IFS= read -r -d '' bound_json; } < "$STORE_LIVE_PATHS_FILE"; then
+      bound_dir="unavailable (invalid metadata)"
+      bound_json="unavailable (invalid metadata)"
+    fi
     err "Profile store ($PROFILES_DIR) is bound to a different live configuration, or its .live-paths file is invalid
+Bound directory: $bound_dir
+Bound JSON: $bound_json
 Selected directory: $_CANON_CLAUDE_DIR
 Selected JSON: $_CANON_CLAUDE_JSON_FILE
 Use this store's original config paths, or choose a separate CLAUDE_PROFILE_HOME"

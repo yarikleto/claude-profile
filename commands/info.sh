@@ -61,12 +61,15 @@ cmd_edit() {
   # (no --wait) / `open` return immediately; a reload would race that editor.
   local blocking=false
   if [[ -n "${EDITOR:-}" ]]; then
+    _ensure_store_live_paths || return 1
     # EDITOR may carry arguments ("code --wait") — let a shell split it
     blocking=true
     sh -c "$EDITOR \"\$1\"" claude-profile-edit "$profile_dir"
   elif command -v code &>/dev/null; then
+    _ensure_store_live_paths || return 1
     code "$profile_dir"
   elif [[ "$(uname)" == "Darwin" ]]; then
+    _ensure_store_live_paths || return 1
     open "$profile_dir"
   else
     echo "$profile_dir"

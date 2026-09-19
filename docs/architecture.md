@@ -110,12 +110,15 @@ The store location is independent of the live directory. Each store needs one
 stable live directory: independent configurations need separate
 `CLAUDE_PROFILE_HOME` values even when used sequentially, because the active
 marker and original backup belong to the store. `.live-paths` atomically records
-the canonical directory and JSON location on the first write, using two
+the canonical directory and JSON location before storing configuration, using two
 NUL-separated paths. Writers check it before locking and again under the lock,
 before migrations. Live `show` and `diff` also require a match; a mismatched
 read-only command does not run migrations. The JSON parent is canonicalized
 without following the final file symlink, which saves may materialize. Old
-unbound stores adopt the selected paths on their next write. Path overrides do not migrate
+unbound stores with saved state refuse a relocated JSON: released versions always
+managed `$HOME/.claude.json`. Default-JSON upgrades can adopt the selected
+directory when storing configuration; invalid commands do not bind a store.
+Path overrides do not migrate
 existing live files or stores or replace the original backup; upgrades from a
 release that ignored `CLAUDE_CONFIG_DIR` should capture that custom configuration
 with `fork` in a fresh store before switching.
