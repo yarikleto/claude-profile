@@ -12,6 +12,12 @@ _skip_entry() {
   esac
 }
 
+# The relocated JSON is handled separately at its reserved profile name;
+# copying it as payload too would lose or duplicate it during a move switch.
+_skip_live_entry() {
+  _skip_entry "$1" || [[ "$CLAUDE_JSON_IN_CONFIG_DIR" == true && "$1" == ".claude.json" ]]
+}
+
 # Path at which a profile stores the home-level ~/.claude.json.
 _profile_home_json() { printf '%s\n' "$1/$CLAUDE_HOME_JSON"; }
 
@@ -39,6 +45,9 @@ _staging_dir() { printf '%s\n' "$PROFILES_DIR/.saving"; }
 # beyond the skipped git metadata.
 _dir_has_entries() {
   local dir="$1" f base
+  if [[ -L "$dir/$CLAUDE_HOME_JSON" || -e "$dir/$CLAUDE_HOME_JSON" ]]; then
+    return 0
+  fi
   for f in "$dir"/* "$dir"/.*; do
     base="$(basename "$f")"
     if _skip_entry "$base"; then
@@ -55,9 +64,9 @@ _dir_has_entries() {
 # copy them, and silently dropping them would make the snapshot lie.
 _assert_live_has_no_broken_symlinks() {
   local f base broken
-  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.* "$HOME/.claude.json"; do
+  for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.* "$CLAUDE_JSON_FILE"; do
     base="$(basename "$f")"
-    if [[ "$f" != "$HOME/.claude.json" ]] && _skip_entry "$base"; then
+    if [[ "$f" != "$CLAUDE_JSON_FILE" ]] && _skip_live_entry "$base"; then
       continue
     fi
     if [[ ! -L "$f" && ! -e "$f" ]]; then
@@ -76,14 +85,14 @@ _assert_live_has_no_broken_symlinks() {
 # ~/.claude.json exists, or live ~/.claude/ contains any entry (dotfiles
 # included) other than the skipped git metadata.
 _live_state_nonempty() {
-  if [[ -e "$HOME/.claude.json" ]]; then
+  if [[ -e "$CLAUDE_JSON_FILE" ]]; then
     return 0
   fi
   local f
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     if [[ -L "$f" || -e "$f" ]]; then
@@ -100,7 +109,7 @@ _live_state_equals_dir() {
   local f base
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     base="$(basename "$f")"
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     if [[ ! -L "$f" && ! -e "$f" ]]; then
@@ -119,16 +128,15 @@ _live_state_equals_dir() {
     if [[ ! -L "$f" && ! -e "$f" ]]; then
       continue
     fi
-    if [[ ! -e "$CLAUDE_DIR/$base" ]]; then
+    if _skip_live_entry "$base" || [[ ! -e "$CLAUDE_DIR/$base" ]]; then
       return 1
     fi
   done
-  # Special: ~/.claude.json lives outside CLAUDE_DIR — compare it against the
-  # profile's reserved home file (tolerating the legacy root layout).
+  # Compare the managed JSON separately in either live layout.
   local dir_home
   dir_home="$(_profile_home_json_read "$dir")"
-  if [[ -e "$HOME/.claude.json" || -e "$dir_home" ]]; then
-    if ! diff -q "$HOME/.claude.json" "$dir_home" >/dev/null 2>&1; then
+  if [[ -e "$CLAUDE_JSON_FILE" || -e "$dir_home" ]]; then
+    if ! diff -q "$CLAUDE_JSON_FILE" "$dir_home" >/dev/null 2>&1; then
       return 1
     fi
   fi
@@ -139,6 +147,7 @@ _live_state_equals_dir() {
 # Uses $PROFILES_DIR/.seed/ if it exists, otherwise falls back to built-in defaults.
 _seed_profile() {
   local dst="$1"
+  _ensure_store_live_paths || return 1
   local seed_dir="$PROFILES_DIR/.seed"
   if [[ -d "$seed_dir" ]]; then
     local f
@@ -183,19 +192,20 @@ _snapshot_current() {
   local dst="$1"
   _assert_profile_path_safe "$dst"
   _assert_live_has_no_broken_symlinks || return 1
+  _ensure_store_live_paths || return 1
   local f
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     if [[ -e "$f" ]]; then
       cp -RL "$f" "$dst/$base"
     fi
   done
-  if [[ -e "$HOME/.claude.json" ]]; then
-    cp -RL "$HOME/.claude.json" "$(_profile_home_json "$dst")"
+  if [[ -e "$CLAUDE_JSON_FILE" ]]; then
+    cp -RL "$CLAUDE_JSON_FILE" "$(_profile_home_json "$dst")"
   fi
 }
 
@@ -208,15 +218,17 @@ _save_current_to() {
   local msg="${2:-Auto-save}"
   local move="${3:-}"
   _assert_profile_path_safe "$dst"
+  _assert_profile_json_layout "$dst" || return 1
+  if [[ "$move" != "--move" ]]; then
+    _assert_live_has_no_broken_symlinks || return 1
+  fi
   mkdir -p "$dst"
   # An empty live state is never worth snapshotting — after an interrupted
   # switch, saving it would propagate deletions into a still-complete profile.
   if ! _live_state_nonempty; then
     return 0
   fi
-  if [[ "$move" != "--move" ]]; then
-    _assert_live_has_no_broken_symlinks || return 1
-  fi
+  _ensure_store_live_paths || return 1
   # Clean staging left by an earlier interrupted copy. It lives at the store
   # root, not in the profile payload — see _staging_dir.
   local staging
@@ -227,8 +239,8 @@ _save_current_to() {
   # dir is empty and this would wipe the entries just moved.
   for f in "$dst"/* "$dst"/.*; do
     base="$(basename "$f")"
-    # The reserved home file is skipped here (handled below); a root
-    # .claude.json is now a genuine live-payload entry and propagates normally.
+    # The managed JSON is handled below; incompatible stored payload JSON was
+    # rejected before any snapshot changes.
     if _skip_entry "$base"; then
       continue
     fi
@@ -241,7 +253,7 @@ _save_current_to() {
   done
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     base="$(basename "$f")"
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     if [[ ! -L "$f" && ! -e "$f" ]]; then
@@ -267,18 +279,15 @@ _save_current_to() {
     fi
   done
   rm -rf "$staging" 2>/dev/null || true
-  # Special: always capture ~/.claude.json (even with --move, since it lives
-  # outside CLAUDE_DIR); its deletion propagates too. With --move also remove
-  # the live copy, so the outgoing move leaves live COMPLETELY empty — a crash
-  # at the save/load boundary then has nothing left for recovery to sweep into
-  # the wrong profile (the load restores the target's own .claude.json).
+  # Remove the live JSON after a move-mode save so recovery at the save/load
+  # boundary cannot sweep the outgoing profile's JSON into the target profile.
   local dst_home
   dst_home="$(_profile_home_json "$dst")"
-  if [[ -e "$HOME/.claude.json" ]]; then
+  if [[ -e "$CLAUDE_JSON_FILE" ]]; then
     rm -rf "$dst_home"
-    cp -RL "$HOME/.claude.json" "$dst_home"
+    cp -RL "$CLAUDE_JSON_FILE" "$dst_home"
     if [[ "$move" == "--move" ]]; then
-      rm -f "$HOME/.claude.json"
+      rm -f "$CLAUDE_JSON_FILE"
     fi
   else
     rm -rf "$dst_home"
@@ -298,10 +307,11 @@ _save_current_to() {
 _sweep_live_entries_to() {
   local dst="$1" f base
   _assert_profile_path_safe "$dst"
+  _ensure_store_live_paths || return 1
   mkdir -p "$dst"
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     base="$(basename "$f")"
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     if [[ -L "$f" || -e "$f" ]]; then
@@ -309,12 +319,33 @@ _sweep_live_entries_to() {
       mv "$f" "$dst/$base"
     fi
   done
-  if [[ -e "$HOME/.claude.json" ]]; then
+  if [[ -e "$CLAUDE_JSON_FILE" ]]; then
     local dst_home
     dst_home="$(_profile_home_json "$dst")"
     rm -rf "$dst_home"
-    cp -RL "$HOME/.claude.json" "$dst_home"
-    rm -f "$HOME/.claude.json"
+    cp -RL "$CLAUDE_JSON_FILE" "$dst_home"
+    rm -f "$CLAUDE_JSON_FILE"
+  fi
+}
+
+_assert_profile_json_layout() {
+  local profile_dir="$1"
+  # A default-layout payload .claude.json and the managed JSON cannot share
+  # one relocated path. Refuse before saving/moving any live files.
+  if [[ "$CLAUDE_JSON_IN_CONFIG_DIR" == true &&
+        ( -e "$profile_dir/.claude.json" || -L "$profile_dir/.claude.json" ) ]]; then
+    if [[ "$(_read_store_format)" -ge 2 ||
+          "$(_profile_home_json_read "$profile_dir")" != "$profile_dir/.claude.json" ]]; then
+      err "Profile payload .claude.json conflicts with the managed JSON at $CLAUDE_JSON_FILE"
+      err "Payload JSON: $profile_dir/.claude.json"
+      err "JSON that would be loaded: $profile_dir/$CLAUDE_HOME_JSON -> $CLAUDE_JSON_FILE"
+      if [[ ! -e "$profile_dir/$CLAUDE_HOME_JSON" ]]; then
+        err "The managed JSON is missing; it must be chosen before this profile can be loaded"
+      fi
+      err "Preserve both files and identify the intended account before converting this profile"
+      err "See https://github.com/yarikleto/claude-profile/blob/main/docs/configuration.md#migrating-stores-with-two-json-files"
+      return 1
+    fi
   fi
 }
 
@@ -323,6 +354,7 @@ _sweep_live_entries_to() {
 _validate_profile_for_load() {
   local profile_dir="$1"
   _assert_profile_path_safe "$profile_dir"
+  _assert_profile_json_layout "$profile_dir" || return 1
 
   # Stored symlinks can come from an interrupted move-mode switch.
   _repair_profile_symlinks "$profile_dir" || return 1
@@ -375,17 +407,20 @@ _validate_profile_for_load() {
 _load_profile_to_live() {
   local profile_dir="$1"
   local move="${2:-}"
+  local f
 
   # The source must be a real dir inside the store — never a symlink whose
   # target we would copy into the live config.
   _assert_profile_path_safe "$profile_dir"
 
   _validate_profile_for_load "$profile_dir" || return 1
+  _ensure_store_live_paths || return 1
+  mkdir -p "$CLAUDE_DIR"
 
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     if [[ -L "$f" || -e "$f" ]]; then
@@ -393,9 +428,9 @@ _load_profile_to_live() {
     fi
   done
 
-  # Always clear ~/.claude.json before loading — if the target profile has one,
+  # Always clear the managed JSON before loading — if the target profile has one,
   # it will be restored below. If not, absence is the correct state.
-  rm -f "$HOME/.claude.json"
+  rm -f "$CLAUDE_JSON_FILE"
 
   # Resolve the stored home file up front. For a legacy (pre-format-2) profile
   # this may be the root .claude.json, which must then NOT also be loaded as a
@@ -425,14 +460,10 @@ _load_profile_to_live() {
     fi
   done
 
-  # Restore the home file to ~/.claude.json (always copy — it lives outside
-  # CLAUDE_DIR). The reserved-name storage keeps it separate from any live
-  # payload file literally named .claude.json.
+  # Keep the stored JSON even during move-mode loads, as in the default layout.
   if [[ -e "$home_src" && ! -L "$home_src" ]]; then
-    cp -RP "$home_src" "$HOME/.claude.json"
+    cp -RP "$home_src" "$CLAUDE_JSON_FILE"
   fi
-
-  mkdir -p "$CLAUDE_DIR"
 }
 
 _restore_from_backup() {
@@ -482,14 +513,14 @@ _show_live_summary() {
   for f in "$CLAUDE_DIR"/* "$CLAUDE_DIR"/.*; do
     local base
     base="$(basename "$f")"
-    if _skip_entry "$base"; then
+    if _skip_live_entry "$base"; then
       continue
     fi
     _show_summary_item "$f" "$base"
   done
 
-  if [[ -e "$HOME/.claude.json" ]]; then
-    _show_summary_item "$HOME/.claude.json" ".claude.json"
+  if [[ -e "$CLAUDE_JSON_FILE" ]]; then
+    _show_summary_item "$CLAUDE_JSON_FILE" ".claude.json"
   fi
 }
 

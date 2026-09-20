@@ -263,6 +263,27 @@ Project-scoped servers are the exception. They are declared in a `.mcp.json` fil
 </details>
 
 <details>
+<summary><strong>Can I use a custom Claude Code config directory?</strong></summary>
+
+Yes. Both Claude Code and `claude-profile` read `CLAUDE_CONFIG_DIR`:
+
+```bash
+export CLAUDE_CONFIG_DIR="$HOME/.claude-work"
+export CLAUDE_PROFILE_HOME="$HOME/.local/share/claude-profile-work"
+claude-profile fork work
+claude
+```
+
+Profiles manage that directory and its `.claude.json`. This does not move existing
+files. Keep a separate profile store for each independent config directory, even
+when used at different times. If you used `CLAUDE_CONFIG_DIR` with an older
+release, [start with a fresh store](docs/configuration.md#upgrading-with-a-custom-config-directory)
+to capture the correct original backup. See
+[environment variables](docs/configuration.md#environment-variables) for the
+legacy `CLAUDE_CODE_HOME` override and conflict handling.
+</details>
+
+<details>
 <summary><strong>Can I customize the storage location?</strong></summary>
 
 Set `CLAUDE_PROFILE_HOME` to override the profiles storage location, or `XDG_DATA_HOME` to use a custom XDG data directory. See [configuration docs](docs/configuration.md).

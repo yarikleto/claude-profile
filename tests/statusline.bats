@@ -1,6 +1,25 @@
 #!/usr/bin/env bats
 load test_helper
 
+@test "statusline script: uses its own store when the shell selects another account" {
+  run_cli_ok fork personal
+  unset CLAUDE_CODE_HOME
+  export CLAUDE_CONFIG_DIR="$HOME/work-config"
+  export CLAUDE_PROFILE_HOME="$HOME/work-store"
+  run_cli_ok new work
+  run_cli_ok statusline install
+
+  run env -u CLAUDE_PROFILE_HOME -u CLAUDE_CONFIG_DIR -u XDG_DATA_HOME \
+    bash "$CLAUDE_PROFILE_HOME/statusline.sh" < /dev/null
+  [ "$status" -eq 0 ]
+  [ "$output" = 'Claude · profile: work' ]
+
+  run env CLAUDE_PROFILE_HOME="$HOME/.local/share/claude-profile" \
+    bash "$CLAUDE_PROFILE_HOME/statusline.sh" < /dev/null
+  [ "$status" -eq 0 ]
+  [ "$output" = 'Claude · profile: work' ]
+}
+
 @test "statusline install bootstraps profiles dir when missing" {
   rm -rf "$CLAUDE_PROFILE_HOME"
 

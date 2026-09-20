@@ -61,12 +61,15 @@ cmd_edit() {
   # (no --wait) / `open` return immediately; a reload would race that editor.
   local blocking=false
   if [[ -n "${EDITOR:-}" ]]; then
+    _ensure_store_live_paths || return 1
     # EDITOR may carry arguments ("code --wait") — let a shell split it
     blocking=true
     sh -c "$EDITOR \"\$1\"" claude-profile-edit "$profile_dir"
   elif command -v code &>/dev/null; then
+    _ensure_store_live_paths || return 1
     code "$profile_dir"
   elif [[ "$(uname)" == "Darwin" ]]; then
+    _ensure_store_live_paths || return 1
     open "$profile_dir"
   else
     echo "$profile_dir"
@@ -78,6 +81,7 @@ cmd_edit() {
   # authoritative state. Bracket the destructive reload with the op marker so a
   # crash mid-reload is recoverable (the profile dir keeps its copy).
   if [[ "$is_active" == true && "$blocking" == true ]]; then
+    _validate_profile_for_load "$profile_dir" || return 1
     _set_op_marker "use $name"
     _load_profile_to_live "$profile_dir"
     _clear_op_marker

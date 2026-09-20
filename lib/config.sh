@@ -13,7 +13,13 @@ if [[ -z "$VERSION" ]]; then
 fi
 unset VERSION_FILE
 
-CLAUDE_DIR="${CLAUDE_CODE_HOME:-$HOME/.claude}"
+CLAUDE_DIR="${CLAUDE_CODE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
+CLAUDE_JSON_FILE="$HOME/.claude.json"
+CLAUDE_JSON_IN_CONFIG_DIR=false
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+  CLAUDE_JSON_FILE="$CLAUDE_DIR/.claude.json"
+  CLAUDE_JSON_IN_CONFIG_DIR=true
+fi
 
 if [[ -n "${CLAUDE_PROFILE_HOME:-}" ]]; then
   PROFILES_DIR="$CLAUDE_PROFILE_HOME"
@@ -44,6 +50,23 @@ _canonical_path() {
     [[ "$canon" == "/" ]] && canon=""
     local result="$canon$tail"
     [[ -z "$result" ]] && result="/"
+    # A missing ancestor can leave '..' in the tail. Normalize it, then resolve
+    # again so a revealed symlink cannot bypass the HOME/ancestor guard.
+    local rest="$result/" normalized="" component
+    while [[ "$rest" == */* ]]; do
+      component="${rest%%/*}"
+      rest="${rest#*/}"
+      case "$component" in
+        ''|.) ;;
+        ..) normalized="${normalized%/*}" ;;
+        *) normalized="$normalized/$component" ;;
+      esac
+    done
+    normalized="${normalized:-/}"
+    if [[ "$normalized" != "$result" ]]; then
+      _canonical_path "$normalized"
+      return
+    fi
     printf '%s\n' "$result"
   else
     printf '%s\n' "$path"
@@ -55,9 +78,28 @@ _canonical_path() {
 # backup. Compare _canonical_path output — a raw string compare misses aliases.
 _CANON_PROFILES_DIR="$(_canonical_path "$PROFILES_DIR")"
 _CANON_CLAUDE_DIR="$(_canonical_path "$CLAUDE_DIR")"
+_CANON_HOME="$(_canonical_path "$HOME")"
+# Compare the JSON's parent, not its target: saves replace a live JSON symlink
+# with a regular file without changing which configuration this store owns.
+_CANON_CLAUDE_JSON_FILE="$(_canonical_path "$(dirname "$CLAUDE_JSON_FILE")")/.claude.json"
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" && "$CLAUDE_CONFIG_DIR" != /* ]]; then
+  err "CLAUDE_CONFIG_DIR must be an absolute path to a dedicated configuration directory"
+  exit 1
+fi
+if [[ "$_CANON_CLAUDE_DIR" == / || "$_CANON_CLAUDE_DIR" == "$_CANON_HOME" ||
+      "$_CANON_HOME" == "$_CANON_CLAUDE_DIR"/* ]]; then
+  err "Unsafe live config directory ($CLAUDE_DIR): use a dedicated directory, not HOME or an ancestor of HOME"
+  exit 1
+fi
+if [[ -n "${CLAUDE_CODE_HOME:-}" && -n "${CLAUDE_CONFIG_DIR:-}" &&
+      "$_CANON_CLAUDE_DIR" != "$(_canonical_path "$CLAUDE_CONFIG_DIR")" ]]; then
+  err "CLAUDE_CODE_HOME ($CLAUDE_CODE_HOME) conflicts with CLAUDE_CONFIG_DIR ($CLAUDE_CONFIG_DIR)
+Run 'unset CLAUDE_CODE_HOME' to use Claude Code's config directory, or set both to the same directory"
+  exit 1
+fi
 if [[ "$_CANON_PROFILES_DIR" == "$_CANON_CLAUDE_DIR" || "$_CANON_PROFILES_DIR" == "$_CANON_CLAUDE_DIR"/* ]]; then
-  err "Profile store ($PROFILES_DIR) must not be inside the live config dir ($CLAUDE_DIR)"
-  err "Move it elsewhere and update CLAUDE_PROFILE_HOME"
+  err "Profile store ($PROFILES_DIR) must not be inside the live config dir ($CLAUDE_DIR)
+Move it elsewhere and update CLAUDE_PROFILE_HOME"
   exit 1
 fi
 if [[ "$_CANON_CLAUDE_DIR" == "$_CANON_PROFILES_DIR"/* ]]; then
@@ -68,6 +110,7 @@ fi
 CURRENT_FILE="$PROFILES_DIR/.current"
 OP_MARKER_FILE="$PROFILES_DIR/.op-in-progress"
 STORE_FORMAT_FILE="$PROFILES_DIR/.format"
+STORE_LIVE_PATHS_FILE="$PROFILES_DIR/.live-paths"
 STORE_FORMAT=3
 
 # Capture this before locking or command setup can create the store directory.
@@ -78,10 +121,9 @@ if [[ -d "$PROFILES_DIR" ]]; then
   STORE_EXISTED_AT_STARTUP=true
 fi
 
-# ~/.claude.json (home level) is stored in a profile under this reserved name,
-# in a namespace disjoint from the live payload: a live ~/.claude/.claude.json
-# is captured as the payload entry ".claude.json" without colliding with the
-# home file. Pre-format-2 profiles kept it at the root; migration moves it here.
+# Store the managed JSON under one reserved name in either live layout. With
+# the default layout this keeps a separate ~/.claude/.claude.json payload from
+# colliding with the home file. Pre-format-2 migration moves the old root file.
 CLAUDE_HOME_JSON=".claude-profile-home.json"
 
 # Seed files for new (empty) profiles so Claude Code doesn't complain.

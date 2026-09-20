@@ -3,6 +3,10 @@
 
 CLAUDE_PROFILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/claude-profile"
 
+# Also covers tests with their own setup: an inherited official path can point
+# outside the isolated HOME, and would conflict with the test's legacy override.
+unset CLAUDE_CONFIG_DIR
+
 # Fully isolate tests from the caller's git environment — done at load time so
 # it covers EVERY test file, including the ones that define their own setup()
 # and never call the shared one (install.bats, uninstall.bats).

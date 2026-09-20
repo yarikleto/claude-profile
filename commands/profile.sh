@@ -98,6 +98,7 @@ cmd_new() {
   current="$(get_current_validated)"
   _guard_detached_live_state "$current" "$force" "$backup_preexisted"
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    _assert_profile_json_layout "$PROFILES_DIR/$current" || return 1
     info "Saving profile $(_pname "$current")..."
     # Saving phase marker BEFORE the first destructive move (see cmd_use).
     _mark_op use saving "$current" "$name"
@@ -133,8 +134,6 @@ cmd_fork() {
     err "Profile '$(_pname "$name")' already exists"; exit 1
   fi
 
-  mkdir -p "$profile_dir"
-
   local current
   current="$(get_current_validated)"
 
@@ -150,6 +149,7 @@ cmd_fork() {
   else
     info "Forking from original state..."
   fi
+  mkdir -p "$profile_dir"
   _snapshot_current "$profile_dir"
   _git_init "$profile_dir"
 
@@ -194,6 +194,7 @@ cmd_use() {
     # The live config is gone (e.g. an interrupted switch) but the profile
     # still holds it — reload instead of pretending all is well.
     warn "Live config is empty — reloading $(_pname "$name")"
+    _validate_profile_for_load "$profile_dir" || return 1
     _set_op_marker "use $name"
     _load_profile_to_live "$profile_dir" --move
     _clear_op_marker
@@ -217,6 +218,7 @@ cmd_use() {
   # Mark the saving phase BEFORE the first destructive move: a crash mid-save
   # then sweeps live back to the source instead of exact-sync-deleting it.
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
+    _assert_profile_json_layout "$PROFILES_DIR/$current" || return 1
     info "Saving $(_pname "$current")..."
     _mark_op use saving "$current" "$name"
     _save_current_to "$PROFILES_DIR/$current" "Auto-save before switch to '$name'" --move
@@ -381,6 +383,7 @@ cmd_deactivate() {
     if [[ "$resume_restore" == true ]]; then
       : # live holds a partial restore — nothing of the user's to save
     elif [[ -n "$current" ]]; then
+      _assert_profile_json_layout "$PROFILES_DIR/$current" || return 1
       info "Saving $(_pname "$current")..."
       # Saving phase marker BEFORE the first destructive move (see cmd_use).
       _mark_op deactivate saving "$current" ""

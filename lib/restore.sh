@@ -24,6 +24,24 @@ _restore_path_is_disposable() {
   return 1
 }
 
+# Check history before applying it: discovering a JSON collision only during
+# reload would leave the active profile changed and a false recovery marker.
+_restore_assert_live_layout() {
+  local profile_dir="$1" tree="$2" entry
+  if [[ "$CLAUDE_JSON_IN_CONFIG_DIR" != true ]]; then
+    return 0
+  fi
+  if ! entry="$(git -C "$profile_dir" ls-tree "$tree" -- .claude.json)"; then
+    err "Could not inspect the restored config layout"
+    return 1
+  fi
+  if [[ -n "$entry" ]]; then
+    err "Revision's .claude.json conflicts with the managed JSON at $CLAUDE_JSON_FILE"
+    err "Restore this revision with its original config layout; current state was saved"
+    return 1
+  fi
+}
+
 # Tree of the only state a restore may touch: config plus durable memory.
 # Disposable roots are omitted even if an old commit tracked them, so their
 # untracked worktree copies survive. .gitignore comes from the worktree, not
