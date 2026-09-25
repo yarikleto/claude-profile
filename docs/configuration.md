@@ -114,33 +114,52 @@ Next time you run `new`, it will use your custom templates.
 ## Git tracking
 
 Each profile has its own git history for tracking configuration and durable
-memory changes. A managed `.gitignore` separates persistent memory from
-disposable/session data while all files are still copied between profiles:
+memory changes. A managed `.gitignore` excludes runtime data and credential
+files while all files are still copied between profiles. The excluded set is
+based on the session and cache data listed in
+[Claude Code’s application-data reference](https://code.claude.com/docs/en/claude-directory#application-data):
 
 - **Git-tracked**: `settings.json`, `CLAUDE.md`, `agents/`, `skills/`, `rules/`, `keybindings.json`, `.claude-profile-home.json`,
-  `agent-memory/`, and `projects/*/memory/`.
+  `agent-memory/`, and `projects/*/memory/`. Other paths are tracked unless ignored.
 - **Git-ignored** (still copied): all other content under `projects/` (including
-  session transcripts), plus `todos/`, `plans/`, `tasks/`, `plugins/`, and
-  `history.jsonl`.
+  session transcripts), plus `plans/`, `tasks/`, `plugins/`, `history.jsonl`,
+  `file-history/`, `shell-snapshots/`, `sessions/`, `session-env/`, `paste-cache/`,
+  `image-cache/`, `uploads/`, `usage-data/`, `debug/`, `backups/`, `cache/`,
+  `downloads/`, `chrome/`, `feedback-bundles/`, `feedback/drafts/`, `skills/.trash/`,
+  `jobs/`, and `daemon/`.
+- **Also excluded**: `stats-cache.json`, `remote-settings.json`, `policy-limits.json`,
+  `policy-limits.json.stamp.json`, `.last-cleanup`, `.last-update-result.json`,
+  `settings.json.bak`, `settings.json.bak.*`, `.credentials.json`, and
+  `.credentials.json.*`. Legacy `todos/`, `statsig/`, and `logs/` remain excluded
+  so upgrades do not start committing old session data.
 
 This means `history`, `diff`, and `restore` cover persistent memory as well as
 configuration, without filling history with transcripts. Memory can contain
 personal preferences and project learnings, and the stored `~/.claude.json`
 carries the signed-in account record and MCP server definitions; because both
 are versioned, deleting them from the live profile does not remove older copies
-from that profile's Git history. On Linux and Windows — and on macOS whenever
-the Keychain write is rejected — `.credentials.json` is versioned too, so
-`restore` can bring an earlier login back. These repositories and Git objects
-stay local and are not uploaded by claude-profile; they are plaintext, protected
-only by filesystem permissions — the store is created `chmod 700` and every
-command runs under `umask 077`, so the copies stay readable just by you.
+from that profile's Git history. Dedicated `.credentials.json` files and their
+sidecars are excluded on every platform; restore preserves their current state.
+This is a path-based policy, not secret detection: credentials embedded in
+settings, MCP definitions, memory, or other tracked files can still be versioned.
+These repositories and Git objects stay local and are not uploaded by
+claude-profile; they are plaintext, protected only by filesystem permissions —
+the store is created `chmod 700` and every command runs under `umask 077`, so
+the copies stay readable just by you.
 
-Existing profiles receive the managed rules automatically. Their first
-subsequent save establishes the earliest recoverable memory baseline. Restoring
+Existing profiles refresh their managed rules on the next save or automatic
+save during a switch. That save removes excluded paths from the Git index
+without deleting their snapshot files. Commits and Git objects written under an
+earlier policy keep whatever they captured; claude-profile never rewrites or
+purges history. Diff hides excluded paths even when comparing older commits, and
+restore never reapplies them. Keep existing profile repositories private.
+
+For profiles predating memory tracking, the first subsequent save establishes
+the earliest recoverable memory baseline. Restoring
 a commit older than that baseline preserves current memory and prints a warning,
 because an absent path in the old commit means it was ignored, not necessarily
-that it did not exist. Restore always preserves current session/disposable
-roots, even if an older bug or a manual force-add put those paths in a commit.
+that it did not exist. Restore always preserves the current state of excluded
+paths, even if an older bug or a manual force-add put those paths in a commit.
 Restore also refuses to remove or recreate an embedded Git repository in an
 ordinary tracked path: the outer profile history stores only its gitlink commit
 ID, not the nested repository's worktree, so applying that transition could
@@ -149,7 +168,7 @@ otherwise delete data that the safety commit cannot recover.
 Rules outside claude-profile's marked managed block are preserved textually
 when the policy is refreshed, and still apply to ordinary profile paths. They
 cannot override the managed history boundary: standard durable memory is
-always versioned, while project transcripts and the other disposable roots are
+always versioned, while the runtime and credential paths listed above are
 always excluded. There is currently no `.gitignore` opt-out for that boundary.
 Save and diff enforce it directly, so nested or global ignore rules cannot hide
 durable memory or pull project transcripts into history.

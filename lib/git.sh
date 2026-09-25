@@ -147,12 +147,35 @@ $GITIGNORE_CONTENT"
   fi
 }
 
+_git_history_path_is_excluded() {
+  local path="$1" pattern
+  for pattern in "${HISTORY_EXCLUDED_PATHS[@]}"; do
+    # Unquoted RHS deliberately matches the root-relative policy glob.
+    if [[ "$path" == $pattern || "$path" == $pattern/* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Historical commits may still contain excluded secrets and runtime data.
+# Hide those paths even when comparing a legacy tree with a cleaned-up tree.
+_git_diff_history() {
+  local dir="$1" pattern
+  shift
+  local -a excluded_paths=()
+  for pattern in "${HISTORY_EXCLUDED_PATHS[@]}"; do
+    excluded_paths+=(":(top,exclude,glob)$pattern" ":(top,exclude,glob)$pattern/**")
+  done
+  git -C "$dir" diff "$@" -- . ':(exclude).gitignore' "${excluded_paths[@]}"
+}
+
 # Stage exactly the paths covered by profile history. The root ignore policy is
 # useful for normal Git inspection, but it cannot be the enforcement boundary:
-# a lower-level .gitignore can override it in either direction. Clear both data
-# roots from the index, stage ordinary config without them, then force-add only
-# the durable subsets. This also removes a transcript that an older/nested rule
-# accidentally allowed into history and makes the marker's exactness truthful.
+# a lower-level .gitignore can override it in either direction. Clear excluded
+# paths and both memory roots from the index, stage ordinary config, then
+# force-add the durable subsets. Older tracked runtime files leave the index
+# without deleting their worktree copies.
 #
 # An optional alternate index is used by `diff` so a read-only command can apply
 # this same policy without changing the profile repository's real index.
@@ -162,8 +185,13 @@ _git_stage_history_paths() (
     export GIT_INDEX_FILE="$alternate_index"
   fi
 
+  local pattern
+  local -a excluded_paths=()
+  for pattern in "${HISTORY_EXCLUDED_PATHS[@]}"; do
+    excluded_paths+=(":(top,glob)$pattern" ":(top,glob)$pattern/**")
+  done
   if ! git -C "$dir" rm -r -f --cached --ignore-unmatch -- \
-      projects agent-memory todos plans tasks plugins history.jsonl \
+      projects agent-memory "${excluded_paths[@]}" \
       >/dev/null 2>&1; then
     return 1
   fi
@@ -184,10 +212,13 @@ _git_stage_history_paths() (
   fi
   while IFS= read -r -d '' ordinary_path; do
     case "$ordinary_path" in
-      projects|projects/*|agent-memory|agent-memory/*|todos|todos/*|plans|plans/*|tasks|tasks/*|plugins|plugins/*|history.jsonl|history.jsonl/*)
+      projects|projects/*|agent-memory|agent-memory/*)
         continue
         ;;
     esac
+    if _git_history_path_is_excluded "$ordinary_path"; then
+      continue
+    fi
     ordinary_pathspec=":(top,literal)$ordinary_path"
     ordinary_path_bytes=$((${#ordinary_pathspec} + 1))
     if [[ "${#ordinary_paths[@]}" -gt 0 &&
@@ -265,7 +296,7 @@ _git_stage_history_paths() (
 # index or object store. Restore uses this to verify its safety snapshots; diff
 # uses it to inspect inactive profiles.
 _diff_git_status() (
-  local repo="$1"
+  local repo="$1" display_only="${2:-}"
   local scratch index objects git_dir real_objects changes
 
   if ! git_dir="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)"; then
@@ -309,10 +340,15 @@ _diff_git_status() (
   if ! _git_stage_history_paths "$repo" "$index"; then
     return 1
   fi
-  if ! changes="$(git -C "$repo" diff \
+  if [[ "$display_only" == "--display-only" ]]; then
+    changes="$(_git_diff_history "$repo" \
+      --cached --name-status --no-renames HEAD 2>/dev/null)" || return 1
+  else
+    # Restore must detect failed exclusion commits: a legacy rollback tree
+    # could otherwise reapply credentials that the display diff hides.
+    changes="$(git -C "$repo" diff \
       --cached --name-status --no-renames HEAD -- . \
-      ':(exclude).gitignore' 2>/dev/null)"; then
-    return 1
+      ':(exclude).gitignore' 2>/dev/null)" || return 1
   fi
   if [[ -n "$changes" ]]; then
     printf '%s\n' "$changes" | sed 's/^/  /'

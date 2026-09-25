@@ -166,9 +166,11 @@ claude-profile use work --force   # drop it: switch and discard the detached cha
 
 Every profile has built-in git history. A save creates a commit when versioned
 files have changed. History covers configuration plus Claude Code's durable
-memory (`agent-memory/` and `projects/*/memory/`). Session transcripts and other
-disposable project data still switch with the profile, but stay out of Git
-history.
+memory (`agent-memory/` and `projects/*/memory/`). Session transcripts,
+per-session runtime data (file checkpoints, shell snapshots, caches, backups of
+`~/.claude.json`), and `.credentials.json` still switch with the profile, but
+stay out of Git history. See [Git tracking](docs/configuration.md#git-tracking)
+for the full list.
 
 ```
 save [-m "message"]     Save current state with a commit message

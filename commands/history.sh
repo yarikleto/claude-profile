@@ -127,7 +127,7 @@ _active_diff_status() {
   _prepare_diff_baseline_repo "$profile_dir" "$repo" || return 1
   _clear_diff_worktree "$repo" || return 1
   _snapshot_live_for_diff "$repo" || return 1
-  _diff_git_status "$repo"
+  _diff_git_status "$repo" --display-only
 }
 
 _diff_active_unsaved() {
@@ -145,7 +145,7 @@ _diff_active_unsaved() {
 _diff_profile_unsaved() {
   local profile_dir="$1"
   local changes rc=0
-  changes="$(_diff_git_status "$profile_dir")" || rc=$?
+  changes="$(_diff_git_status "$profile_dir" --display-only)" || rc=$?
   [[ "$rc" -eq 0 ]] || return "$rc"
 
   _print_diff_changes "$changes"
@@ -175,9 +175,9 @@ _diff_since_ref() {
 
   echo -e "${CYAN}${BOLD}Changes since $ref: $name${NC}"
   echo ""
-  git -C "$profile_dir" diff "$resolved"..HEAD --stat --
+  _git_diff_history "$profile_dir" "$resolved"..HEAD --stat
   echo ""
-  git -C "$profile_dir" diff "$resolved"..HEAD --
+  _git_diff_history "$profile_dir" "$resolved"..HEAD
 }
 
 cmd_restore() {
