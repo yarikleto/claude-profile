@@ -654,7 +654,7 @@ EOF
   grep -Fxq /custom-after "$dir/.gitignore"
   ! grep -Fxq /obsolete-managed-rule "$dir/.gitignore"
   [ "$(grep -Ec '^# BEGIN claude-profile managed: history-policy=' "$dir/.gitignore")" -eq 1 ]
-  grep -Fxq '# BEGIN claude-profile managed: history-policy=2' "$dir/.gitignore"
+  grep -Fxq '# BEGIN claude-profile managed: history-policy=3' "$dir/.gitignore"
 }
 
 @test "migration replaces a symlinked gitignore without touching its target" {
@@ -809,4 +809,218 @@ EOF
   run_cli_ok save -m baseline
   git -C "$dir" cat-file -e HEAD:settings.json
   git -C "$dir" cat-file -e HEAD:projects/-repo/memory/MEMORY.md
+}
+
+session_history_paths() {
+  printf '%s\n' \
+    file-history/session/source.txt shell-snapshots/shell.sh sessions/123.abc.key \
+    session-env/session/env paste-cache/paste.txt image-cache/session/image.png \
+    uploads/session/upload usage-data/report.html debug/session.log \
+    backups/.claude.json.backup cache/changelog.md downloads/file chrome/state \
+    feedback-bundles/report.zip feedback/drafts/draft.json skills/.trash/old/SKILL.md \
+    stats-cache.json remote-settings.json policy-limits.json policy-limits.json.stamp.json \
+    .last-cleanup .last-update-result.json settings.json.bak.20260710-155148 \
+    settings.json.bak .credentials.json .credentials.json.backup \
+    todos/old.json statsig/old.json logs/old.log jobs/state daemon/state
+}
+
+write_session_history_fixture() {
+  local dir="$1" value="$2" path
+  while IFS= read -r path; do
+    mkdir -p "$dir/$(dirname "$path")"
+    printf '%s\n' "$value" > "$dir/$path"
+  done < <(session_history_paths)
+}
+
+force_track_session_history_fixture() {
+  local dir="$1" path
+  while IFS= read -r path; do
+    git -C "$dir" add -f -- "$path"
+  done < <(session_history_paths)
+  git -C "$dir" commit -q -m 'Old session and credential history'
+}
+
+@test "session history: fresh profiles copy but never commit runtime data or credentials" {
+  write_session_history_fixture "$CLAUDE_CODE_HOME" initial
+  mkdir -p "$CLAUDE_CODE_HOME/projects/-repo/memory" "$CLAUDE_CODE_HOME/agent-memory/researcher"
+  echo memory > "$CLAUDE_CODE_HOME/projects/-repo/memory/MEMORY.md"
+  echo agent > "$CLAUDE_CODE_HOME/agent-memory/researcher/MEMORY.md"
+  mkdir -p "$CLAUDE_CODE_HOME/skills/valid/cache" "$CLAUDE_CODE_HOME/feedback"
+  echo skill > "$CLAUDE_CODE_HOME/skills/valid/cache/reference.md"
+  echo config > "$CLAUDE_CODE_HOME/feedback/config.json"
+  echo config > "$CLAUDE_CODE_HOME/settings.json.bakery"
+  run_cli_ok fork default
+  local dir path
+  dir="$(profile_dir default)"
+  while IFS= read -r path; do
+    [ "$(cat "$dir/$path")" = initial ]
+    [ "$(cat "$(backup_dir)/$path")" = initial ]
+    git -C "$dir" check-ignore -q -- "$path"
+    [ -z "$(git -C "$dir" ls-tree --name-only HEAD -- ":(literal)$path")" ]
+  done < <(session_history_paths)
+  for path in settings.json .claude-profile-home.json skills/my-skill/SKILL.md \
+      skills/valid/cache/reference.md feedback/config.json settings.json.bakery \
+      projects/-repo/memory/MEMORY.md agent-memory/researcher/MEMORY.md; do
+    git -C "$dir" cat-file -e "HEAD:$path"
+  done
+}
+
+@test "session history: runtime churn makes no commits or unsaved diff and survives switches" {
+  write_session_history_fixture "$CLAUDE_CODE_HOME" initial
+  run_cli_ok fork alpha
+  run_cli_ok fork beta
+  local dir before path
+  dir="$(profile_dir beta)"
+  before="$(git -C "$dir" rev-parse HEAD)"
+  write_session_history_fixture "$CLAUDE_CODE_HOME" updated
+  run_cli_ok diff
+  [[ "$output" == *"(no changes)"* ]]
+  run_cli_ok save -m runtime-churn
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$before" ]
+  run_cli_ok use alpha
+  while IFS= read -r path; do
+    [ "$(cat "$CLAUDE_CODE_HOME/$path")" = initial ]
+    [ "$(cat "$dir/$path")" = updated ]
+  done < <(session_history_paths)
+  run_cli_ok diff beta
+  [[ "$output" == *"(no changes)"* ]]
+  run_cli_ok use beta
+  while IFS= read -r path; do
+    [ "$(cat "$CLAUDE_CODE_HOME/$path")" = updated ]
+  done < <(session_history_paths)
+}
+
+@test "session history: save upgrades policy and untracks old runtime data without deleting it" {
+  write_session_history_fixture "$CLAUDE_CODE_HOME" initial
+  run_cli_ok fork default
+  local dir old path
+  dir="$(profile_dir default)"
+  cat > "$dir/.gitignore" <<'POLICY'
+/custom-cache
+# BEGIN claude-profile managed: history-policy=2
+# claude-profile-history: persistent-memory-v1
+/projects/**
+!/projects/*/
+!/projects/*/memory/
+!/projects/*/memory/**
+# END claude-profile managed
+POLICY
+  force_track_session_history_fixture "$dir"
+  old="$(git -C "$dir" rev-parse HEAD)"
+  write_session_history_fixture "$CLAUDE_CODE_HOME" updated
+  run_cli_ok save -m upgrade
+  [[ "$output" != *"history skipped"* ]]
+  grep -Fxq /custom-cache "$dir/.gitignore"
+  grep -Fxq '# BEGIN claude-profile managed: history-policy=3' "$dir/.gitignore"
+  while IFS= read -r path; do
+    [ "$(cat "$dir/$path")" = updated ]
+    [ -z "$(git -C "$dir" ls-tree --name-only HEAD -- ":(literal)$path")" ]
+    [ "$(git -C "$dir" show "$old:$path")" = initial ]
+  done < <(session_history_paths)
+  git -C "$dir" diff --cached --quiet
+}
+
+@test "session history: nested and custom ignore exceptions cannot reinclude runtime data" {
+  write_session_history_fixture "$CLAUDE_CODE_HOME" initial
+  echo '!drafts/' > "$CLAUDE_CODE_HOME/feedback/.gitignore"
+  echo '!.trash/' > "$CLAUDE_CODE_HOME/skills/.gitignore"
+  run_cli_ok fork default
+  local dir path
+  dir="$(profile_dir default)"
+  printf '\n!/.credentials.json\n!/sessions/\n!/sessions/**\n' >> "$dir/.gitignore"
+  force_track_session_history_fixture "$dir"
+  write_session_history_fixture "$CLAUDE_CODE_HOME" updated
+  run_cli_ok save -m enforce-exclusions
+  while IFS= read -r path; do
+    [ -z "$(git -C "$dir" ls-tree --name-only HEAD -- ":(literal)$path")" ]
+  done < <(session_history_paths)
+}
+
+@test "session history: inactive legacy diff hides runtime changes without mutating history" {
+  write_session_history_fixture "$CLAUDE_CODE_HOME" initial
+  run_cli_ok fork legacy
+  run_cli_ok fork active
+  local dir before
+  dir="$(profile_dir legacy)"
+  force_track_session_history_fixture "$dir"
+  before="$(git -C "$dir" rev-parse HEAD)"
+  cp "$dir/.git/index" "$BATS_TEST_TMPDIR/index-before-session-diff"
+  write_session_history_fixture "$dir" updated
+  run_cli_ok diff legacy
+  [[ "$output" == *"(no changes)"* ]]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$before" ]
+  cmp "$dir/.git/index" "$BATS_TEST_TMPDIR/index-before-session-diff"
+}
+
+@test "session history: diff against legacy history does not print credential or session deletions" {
+  write_session_history_fixture "$CLAUDE_CODE_HOME" secret-old-value
+  run_cli_ok fork default
+  local dir old
+  dir="$(profile_dir default)"
+  force_track_session_history_fixture "$dir"
+  old="$(git -C "$dir" rev-parse HEAD)"
+  echo '{"changed":true}' > "$CLAUDE_CODE_HOME/settings.json"
+  write_session_history_fixture "$CLAUDE_CODE_HOME" secret-new-value
+  run_cli_ok save -m upgrade
+  run_cli_ok diff default "$old"
+  [[ "$output" == *settings.json* ]]
+  [[ "$output" != *secret-old-value* ]]
+  [[ "$output" != *secret-new-value* ]]
+  [[ "$output" != *'.credentials.json'* ]]
+}
+
+assert_restore_preserves_session_history() {
+  local inactive="$1" dir old path restored
+  write_session_history_fixture "$CLAUDE_CODE_HOME" initial
+  echo settings-target > "$CLAUDE_CODE_HOME/settings.json"
+  run_cli_ok fork default
+  dir="$(profile_dir default)"
+  force_track_session_history_fixture "$dir"
+  old="$(git -C "$dir" rev-parse HEAD)"
+  write_session_history_fixture "$CLAUDE_CODE_HOME" current
+  rm "$CLAUDE_CODE_HOME/sessions/123.abc.key"
+  echo settings-current > "$CLAUDE_CODE_HOME/settings.json"
+  if [[ "$inactive" == true ]]; then
+    run_cli_ok new other
+    restored="$dir"
+  else
+    restored="$CLAUDE_CODE_HOME"
+  fi
+  run_cli_ok restore default "$old"
+  [ "$(cat "$restored/settings.json")" = settings-target ]
+  while IFS= read -r path; do
+    if [[ "$path" == sessions/123.abc.key ]]; then
+      [ ! -e "$restored/$path" ]
+    else
+      [ "$(cat "$restored/$path")" = current ]
+    fi
+    [ -z "$(git -C "$dir" ls-tree --name-only HEAD -- ":(literal)$path")" ]
+  done < <(session_history_paths)
+}
+
+@test "session history: active restore preserves current credentials and checkpoints from polluted history" {
+  assert_restore_preserves_session_history false
+}
+
+@test "session history: inactive restore preserves current credentials and checkpoints from polluted history" {
+  assert_restore_preserves_session_history true
+}
+
+@test "session history: restore aborts if removing old credentials from history cannot be committed" {
+  write_session_history_fixture "$CLAUDE_CODE_HOME" initial
+  run_cli_ok fork default
+  local dir old
+  dir="$(profile_dir default)"
+  force_track_session_history_fixture "$dir"
+  old="$(git -C "$dir" rev-parse HEAD)"
+  write_session_history_fixture "$CLAUDE_CODE_HOME" current
+  git -C "$dir" config commit.gpgsign true
+  git -C "$dir" config gpg.program /nonexistent-gpg
+
+  run_cli restore "$old"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"aborting restore"* ]]
+  [ "$(cat "$dir/.credentials.json")" = current ]
+  [ "$(cat "$CLAUDE_CODE_HOME/.credentials.json")" = current ]
+  [ "$(git -C "$dir" rev-parse HEAD)" = "$old" ]
 }

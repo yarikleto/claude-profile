@@ -151,7 +151,7 @@ Profiles snapshot the **entire** `~/.claude/` directory. There is no distinction
 between "managed items" and "bulk items" for copying or moving. A managed
 `.gitignore` describes which paths participate in profile history; staging also
 enforces the same boundary explicitly so nested ignore files cannot hide memory
-or re-include transcripts.
+or re-include runtime data and credential files.
 
 Lines outside the managed block remain in the file for ordinary paths, but
 they cannot override this boundary. Durable memory and disposable session data
@@ -162,9 +162,33 @@ Git-tracked (configuration and durable memory):
 - Everything not in `.gitignore`.
 - Explicitly, both `agent-memory/**` and `projects/*/memory/**`.
 
-Git-ignored (disposable/session data, still copied/moved):
+Git-ignored (runtime data and credentials, still copied/moved):
 - Everything under `projects/` except each project's `memory/` subtree.
-- `todos/`, `plans/`, `tasks/`, `plugins/`, and `history.jsonl`.
+- `plans/`, `tasks/`, `plugins/`, `history.jsonl`, `file-history/`, `shell-snapshots/`,
+  `sessions/`, `session-env/`, `paste-cache/`, `image-cache/`, `uploads/`,
+  `usage-data/`, `debug/`, `backups/`, `cache/`, `downloads/`, `chrome/`,
+  `feedback-bundles/`, `feedback/drafts/`, `skills/.trash/`, `jobs/`, and `daemon/`.
+- `stats-cache.json`, `remote-settings.json`, `policy-limits.json`,
+  `policy-limits.json.stamp.json`, `.last-cleanup`, `.last-update-result.json`,
+  `settings.json.bak`, `settings.json.bak.*`, `.credentials.json`, and
+  `.credentials.json.*`.
+- Legacy `todos/`, `statsig/`, and `logs/`; removing their exclusions would start
+  versioning leftover session data on upgrade.
+
+`HISTORY_EXCLUDED_PATHS` in `lib/config.sh` defines these root-relative paths and
+patterns once. It generates the managed ignore rules and supplies Git staging,
+read-only diffs, and restore filtering. Exclusions also cover descendants when
+a listed file path is a directory. Ordinary nested names such as
+`skills/example/cache/` remain eligible for history. Memory staging remains an
+explicit inclusion independent of ignore rules.
+
+History policy 3 refreshes the managed block during each profile save/init,
+including automatic saves, without changing store format 3. The next successful
+save removes excluded paths from its private index and publishes a commit;
+snapshot files are preserved. Older commits and objects are not rewritten or
+pruned. Diff filters excluded paths even against legacy history, and restore
+preserves current credentials and checkpoint files even if its target tracked
+them. This does not redact secrets embedded in configuration or memory.
 
 Store format 3 refreshes the tool-managed ignore block in existing profile
 repositories without staging or committing. Startup must not commit during this
@@ -179,7 +203,7 @@ The generated policy carries a history marker. Restore points with that marker
 have exact memory semantics, including deletions. For an older restore point,
 memory absence is unknowable because those paths were ignored, so restore
 preserves current memory and warns. The root `.gitignore` itself is never rolled
-back. Restore also filters disposable roots from historical trees, even if an
+back. Restore also filters excluded paths from historical trees, even if an
 older bug or manual force-add tracked them, so current transcripts and caches
 remain untouched. A target-only path that collides with current untracked,
 custom-ignored content causes restore to stop before changing the worktree.
@@ -284,7 +308,8 @@ Defines constants and path resolution:
 - `CLAUDE_DIR` — non-empty `CLAUDE_CONFIG_DIR`, then `CLAUDE_CODE_HOME`, then `$HOME/.claude`
 - Live `.claude.json` — inside non-empty `CLAUDE_CONFIG_DIR`, otherwise `$HOME/.claude.json`
 - `SEED_NAMES` / `SEED_CONTENTS` — fallback seed templates
-- `GITIGNORE_CONTENT` — managed policy for durable memory vs session data
+- `HISTORY_EXCLUDED_PATHS` — root-relative runtime and credential paths kept out of history
+- `GITIGNORE_CONTENT` — managed policy for durable memory vs session data, generated from `HISTORY_EXCLUDED_PATHS`
 
 ### `lib/profile_safety.sh`
 
@@ -331,6 +356,8 @@ Git operations for version history:
 - `_git_init` — init repo, write managed `.gitignore`, enforce policy, initial commit
 - `_git_commit` — enforce policy + transactionally commit (no-op if unchanged)
 - `_git_resolve_ref` — resolve commit hash or date string to a commit
+- `_git_history_path_is_excluded` — match a root-relative path against `HISTORY_EXCLUDED_PATHS`
+- `_git_diff_history` — `git diff` with excluded paths filtered, so legacy commits never display them
 
 Commit staging uses a private index. The commit object is prepared first, the
 complete index is atomically published, and only then is `HEAD` advanced with a

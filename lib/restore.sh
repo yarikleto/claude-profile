@@ -8,7 +8,7 @@ _restore_path_is_memory() {
   [[ "$path" =~ ^projects/[^/]+/memory(/|$) ]]
 }
 
-_restore_path_is_disposable() {
+_restore_path_is_excluded() {
   local path="$1"
   case "$path" in
     projects|projects/*)
@@ -17,11 +17,8 @@ _restore_path_is_disposable() {
       fi
       return 0
       ;;
-    todos|todos/*|plans|plans/*|tasks|tasks/*|plugins|plugins/*|history.jsonl|history.jsonl/*)
-      return 0
-      ;;
   esac
-  return 1
+  _git_history_path_is_excluded "$path"
 }
 
 # Check history before applying it: discovering a JSON collision only during
@@ -72,7 +69,7 @@ _restore_build_target_tree() (
     if [[ "$path" == ".gitignore" || "$path" == .gitignore/* ]]; then
       continue
     fi
-    if _restore_path_is_disposable "$path"; then
+    if _restore_path_is_excluded "$path"; then
       continue
     fi
     if [[ "$preserve_memory" == true ]] && _restore_path_is_memory "$path"; then
@@ -119,7 +116,7 @@ _restore_write_allowed_paths() {
   fi
   while IFS= read -r -d '' path; do
     if [[ "$path" == ".gitignore" || "$path" == .gitignore/* ]] ||
-       _restore_path_is_disposable "$path"; then
+       _restore_path_is_excluded "$path"; then
       continue
     fi
     printf '%s\0' "$path" >> "$output" || {
@@ -180,7 +177,7 @@ _restore_run_path_batch() {
 _restore_worktree_leaf_is_protected() {
   local profile_dir="$1" path="$2"
   if [[ "$path" == ".gitignore" || "$path" == .gitignore/* ]] ||
-     _restore_path_is_disposable "$path"; then
+     _restore_path_is_excluded "$path"; then
     return 1
   fi
   git -C "$profile_dir" ls-files --error-unmatch -- \
@@ -223,7 +220,7 @@ _restore_apply_target_tree() (
       mode="${metadata%% *}"
       path="${record#*$'\t'}"
       if [[ "$mode" != 160000 || "$path" == ".gitignore" ||
-            "$path" == .gitignore/* ]] || _restore_path_is_disposable "$path"; then
+            "$path" == .gitignore/* ]] || _restore_path_is_excluded "$path"; then
         continue
       fi
       echo "embedded Git repository cannot be restored safely: $path" >&2
